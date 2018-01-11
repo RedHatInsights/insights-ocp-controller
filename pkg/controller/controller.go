@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"os"
 	"log"
 	"sync"
 
@@ -75,7 +76,7 @@ func (c *Controller) scanImage(id string, args []string) error {
 	client, err := docker.NewVersionedClient(endpoint, "1.22")
 	binds := []string{}
 	binds = append(binds, "/var/run/docker.sock:/var/run/docker.sock")
-	scanner := "lphiri/insights-scanner"
+	scanner := "registry.access.redhat.com/insights-scanner"
 
 	container, err := client.CreateContainer(
 		docker.CreateContainerOptions{
@@ -85,6 +86,9 @@ func (c *Controller) scanImage(id string, args []string) error {
 				AttachStderr: true,
 				Tty:          true,
 				Entrypoint:   args,
+				Env: [
+					"SCAN_API=" + os.Getenv("SCAN_API")
+				]
 			},
 			HostConfig: &docker.HostConfig{
 				Privileged: true,
