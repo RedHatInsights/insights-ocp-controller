@@ -4,6 +4,10 @@ import (
 	"os"
 	"log"
 	"sync"
+	"io"
+	"time"
+	"bufio"
+	"strings"
 
 	"github.com/fsouza/go-dockerclient"
 	osclient "github.com/openshift/origin/pkg/client"
@@ -23,6 +27,11 @@ type Controller struct {
 	typer           runtime.ObjectTyper
 	f               *clientcmd.Factory
 	wait            sync.WaitGroup
+}
+
+type ScanResult struct {
+	completed bool
+	scanId    string
 }
 
 func getScanArgs(imageID string) []string {
@@ -99,6 +108,66 @@ func (c *Controller) scanImage(id string, args []string) error {
 		return err
 	}
 	log.Println(container.ID)
+
+	done := make(chan ScanResult)
+	abort := make(chan bool, 1)
+	r, w := io.Pipe()
+
+    monitorOptions := docker.AttachToContainerOptions{
+        Container:    container.ID,
+        OutputStream: w,
+        ErrorStream:  w,
+        Stream:       true,
+        Stdout:       true,
+        Stderr:       true,
+        Logs:         true,
+        RawTerminal:  true,
+    }
+
+    go client.AttachToContainer(monitorOptions) // will block so isolate
+
+    go func(reader *io.PipeReader, a chan bool) {
+
+		for {
+			time.Sleep(time.Second)
+			select {
+			case _ = <-a:
+				log.Printf("Received IO shutdown for scanner.\n")
+				reader.Close()
+				return
+
+			default:
+			}
+
+		}
+
+	}(r, abort)
+
+	go func(reader io.Reader, c chan ScanResult) {
+		scanner := bufio.NewScanner(reader)
+		scan := ScanResult{completed: false, scanId: ""}
+
+		for scanner.Scan() {
+			out := scanner.Text()
+			if strings.Contains(out, "Post Scan...") {
+				log.Printf("Found completed scan with result.\n")
+				scan.completed = true
+			}
+			log.Printf("%s\n", out)
+
+			if strings.Contains(out, "ScanContainerView{scanId=") {
+				cmd := strings.Split(out, "ScanContainerView{scanId=")
+				eos := strings.Index(cmd[1], ",")
+				scan.scanId = cmd[1][:eos]
+				log.Printf("Found scan ID %s with result.\n", scan.scanId)
+			}
+		}
+
+		log.Printf("Placing scan result %t from scanId %s into channel.\n", scan.completed, scan.scanId)
+		c <- scan
+
+	}(r, done)
+
 	err = client.StartContainer(container.ID, &docker.HostConfig{Privileged: true})
 	if err != nil {
 		log.Println("FAIL to start")
@@ -120,5 +189,9 @@ func (c *Controller) scanImage(id string, args []string) error {
 	}
 
 	err = client.RemoveContainer(options)
+
+	abort <- true
+
+
 	return err
 }
