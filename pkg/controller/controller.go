@@ -34,14 +34,14 @@ type ScanResult struct {
 	scanId    string
 }
 
-func getScanArgs(imageID string) []string {
+func getScanArgs(imageID string, mountPoint string) []string {
 
 	args := []string{}
 	args = append(args, "/insights-scanner")
 	args = append(args, "-image")
 	args = append(args, imageID)
 	args = append(args, "-mount_path")
-	args = append(args, "/tmp/image-content8")
+	args = append(args, mountPoint)
 
 	return args
 }
@@ -77,7 +77,7 @@ func (c *Controller) ScanImages() {
 		log.Printf("Scanning image %s %s", image.DockerImageMetadata.ID, image.DockerImageReference)
 
 	}
-	c.scanImage("image.DockerImageMetadata.ID", getScanArgs("registry.access.redhat.com/rhscl/postgresql-94-rhel7"))
+	c.scanImage("image.DockerImageMetadata.ID", getScanArgs("registry.access.redhat.com/rhscl/postgresql-94-rhel7", "/tmp/image-content8"))
 	return
 
 }
@@ -97,7 +97,10 @@ func (c *Controller) scanImage(id string, args []string) error {
 				AttachStderr: true,
 				Tty:          true,
 				Entrypoint:   args,
-				Env: []string{"SCAN_API=" + os.Getenv("SCAN_API")},
+				Env: []string{"SCAN_API=" + os.Getenv("SCAN_API"),
+							  "INSIGHTS_USERNAME=" + os.Getenv("INSIGHTS_USERNAME"),
+							  "INSIGHTS_PASSWORD=" + os.Getenv("INSIGHTS_PASSWORD"),
+							  "INSIGHTS_AUTHMETHOD=" + os.Getenv("INSIGHTS_AUTHMETHOD")},
 			},
 			HostConfig: &docker.HostConfig{
 				Privileged: true,
