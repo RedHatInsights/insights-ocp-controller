@@ -40,6 +40,8 @@ func getScanArgs(imageID string) []string {
 	args = append(args, "/insights-scanner")
 	args = append(args, "-image")
 	args = append(args, imageID)
+	args = append(args, "-mount_path")
+	args = append(args, "/tmp/image-content8")
 
 	return args
 }
