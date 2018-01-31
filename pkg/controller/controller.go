@@ -75,6 +75,7 @@ func (c *Controller) ScanImages() {
 	}
 	for _, image := range imageList.Items {
 		log.Printf("Scanning image %s %s", image.DockerImageMetadata.ID, image.DockerImageReference)
+		// c.scanImage("image.DockerImageMetadata.ID", getScanArgs(string(image.DockerImageReference) + ":latest", "/tmp/image-content8"))
 
 	}
 	c.scanImage("image.DockerImageMetadata.ID", getScanArgs("registry.access.redhat.com/rhscl/postgresql-94-rhel7", "/tmp/image-content8"))
