@@ -1,0 +1,154 @@
+{
+	"reports":{
+	   "test_ops|TEST_OPS":{
+		  "acks":[
+ 
+		  ],
+		  "category":"Availability",
+		  "description":{
+			 "html":"<p> Test availability.</p>\n",
+			 "plain":"Test Availabitiy.\n"
+		  },
+		  "details":{
+			 "html":"<p>Availability issue was found on your system.</p>\n",
+			 "plain":"Availability issue was found on your system.\n"
+		  },
+		  "impact":1,
+		  "likelihood":1,
+		  "reboot_required":false,
+		  "reference":{
+			 "html":"",
+			 "plain":""
+		  },
+		  "resolution":{
+			 "html":"",
+			 "plain":""
+		  },
+		  "rule_data":{
+			 "error_key":"TEST_OPS",
+			 "found_keys":[
+ 
+			 ],
+			 "rhel":7
+		  },
+		  "severity":"CRITICAL",
+		  "summary":{
+			 "html":"",
+			 "plain":""
+		  },
+		  "title":{
+			 "html":"<p>Test security issue</p>\n",
+			 "plain":"Test security issue"
+		  }
+	   },
+	   "test_ops1|TEST_OPS1":{
+		  "acks":[
+ 
+		  ],
+		  "category":"Performance",
+		  "description":{
+			 "html":"<p> Test security.</p>\n",
+			 "plain":"Test Security.\n"
+		  },
+		  "details":{
+			 "html":"<p>Security issue was found on your system.</p>\n",
+			 "plain":"Security issue was found on your system.\n"
+		  },
+		  "impact":1,
+		  "likelihood":1,
+		  "reboot_required":false,
+		  "reference":{
+			 "html":"",
+			 "plain":""
+		  },
+		  "resolution":{
+			 "html":"",
+			 "plain":""
+		  },
+		  "rule_data":{
+			 "error_key":"TEST_OPS1",
+			 "found_keys":[
+ 
+			 ],
+			 "rhel":7
+		  },
+		  "severity":"WARN",
+		  "summary":{
+			 "html":"",
+			 "plain":""
+		  },
+		  "title":{
+			 "html":"<p>Test security issue</p>\n",
+			 "plain":"Test security issue"
+		  }
+	   },
+	   "test_ops2|TEST_OPS2":{
+		  "acks":[
+ 
+		  ],
+		  "category":"Stability",
+		  "description":{
+			 "html":"<p> Test security.</p>\n",
+			 "plain":"Test Security.\n"
+		  },
+		  "details":{
+			 "html":"<p>Security issue was found on your system.</p>\n",
+			 "plain":"Security issue was found on your system.\n"
+		  },
+		  "impact":1,
+		  "likelihood":1,
+		  "reboot_required":false,
+		  "reference":{
+			 "html":"",
+			 "plain":""
+		  },
+		  "resolution":{
+			 "html":"",
+			 "plain":""
+		  },
+		  "rule_data":{
+			 "error_key":"TEST_OPS2",
+			 "found_keys":[
+ 
+			 ],
+			 "rhel":7
+		  },
+		  "severity":"INFO",
+		  "summary":{
+			 "html":"",
+			 "plain":""
+		  },
+		  "title":{
+			 "html":"<p>Test security issue</p>\n",
+			 "plain":"Test security issue"
+		  }
+	   }
+	},
+	"system":{
+	   "hostname":"test.example.com",
+	   "metadata":{
+		  "host_system_id":"7575f7df987442fe995e8d657f97f83e",
+		  "release":"Red Hat Enterprise Linux Server release 7.4 (Maipo)",
+		  "satellite_information":{
+			 "hostname":null,
+			 "version":null
+		  },
+		  "timezone_information":{
+			 "timezone":"EST",
+			 "utcoffset":-18000
+		  }
+	   },
+	   "product":"rhel",
+	   "remote_branch":null,
+	   "remote_leaf":null,
+	   "system_id":"image-content",
+	   "type":"host"
+	},
+	"upload":{
+	   "client":"insights-client/3.0.3",
+	   "engine_rule_count":3,
+	   "size":399360,
+	   "uuid":"a901370e4e5848e9905119fa921947c9"
+	},
+	"version":"0.3"
+ }
