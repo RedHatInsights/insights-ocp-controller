@@ -15,6 +15,6 @@ COPY pkg ./pkg
 COPY vendor ./vendor
 RUN ls
 
-RUN go build -o insights-controller
+RUN go build -o /insights-controller
 
 ENTRYPOINT ["./insights-controller"]
