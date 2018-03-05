@@ -41,7 +41,7 @@ type ScanResult struct {
 func getScanArgs(imageID string, mountPoint string) []string {
 
 	args := []string{}
-	args = append(args, "/insights-scanner")
+	args = append(args, "./insights-scanner")
 	args = append(args, "-image")
 	args = append(args, imageID)
 	args = append(args, "-mount_path")
