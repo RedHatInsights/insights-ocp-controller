@@ -101,7 +101,7 @@ func (c *Controller) scanImage(id string, args []string, imageRef string, imageS
 	client, err := docker.NewVersionedClient(endpoint, "1.22")
 	binds := []string{}
 	binds = append(binds, "/var/run/docker.sock:/var/run/docker.sock")
-	scanner := "redhatinsights/insights-scanner"
+	scanner := "redhatinsights/insights-ocp-scanner"
 
 	container, err := client.CreateContainer(
 		docker.CreateContainerOptions{
