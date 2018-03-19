@@ -89,9 +89,9 @@ func (c *Controller) ScanImages() {
 
 	// Force known image scan
 	c.scanImage("image.DockerImageMetadata.ID", 
-			getScanArgs("openshift/wildfly-100-centos7", "/tmp/image-content8"), 
-			"openshift/wildfly-100-centos7", 
-			"sha256:01fde7095217610427a3fb133e0ff6003cc5958f65e956fa58aecde3f57d45ff")
+			getScanArgs("registry.access.redhat.com/rhscl/postgresql-94-rhel7", "/tmp/image-content8"), 
+			"registry.access.redhat.com/rhscl/postgresql-94-rhel7", 
+			"sha256:79e378f133877677c78246b5d5233384c8dca0bf47ec32fef7f152e7ea69bade")
 	return
 
 }
