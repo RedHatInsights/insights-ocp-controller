@@ -88,13 +88,18 @@ func (c *Controller) ScanImages() {
 		return
 	}
 	for _, image := range imageList.Items {
-		log.Printf("Scanning image %s %s", image.DockerImageMetadata.ID, image.DockerImageReference)
-		 c.scanImage("image.DockerImageMetadata.ID", 
-			getScanArgs(string(image.DockerImageReference), "/tmp/image-content8"),
-			string(image.DockerImageReference),
-			image.DockerImageMetadata.ID)
-			
-
+        log.Printf("Scanning image %s %s", image.DockerImageMetadata.ID, image.DockerImageReference)
+        log.Printf("Scanning image %s %s", 
+            "sha256:79e378f133877677c78246b5d5233384c8dca0bf47ec32fef7f152e7ea69bade", 
+            "registry.access.redhat.com/rhscl/postgresql-94-rhel7")
+        // c.scanImage(image.DockerImageMetadata.ID, 
+        //  getScanArgs(string(image.DockerImageReference), "/tmp/image-content8"),
+        //  string(image.DockerImageReference),
+        //  image.DockerImageMetadata.ID)
+        c.scanImage("image.DockerImageMetadata.ID", 
+            getScanArgs("registry.access.redhat.com/rhscl/postgresql-94-rhel7", "/tmp/image-content8"), 
+            "registry.access.redhat.com/rhscl/postgresql-94-rhel7", 
+            "sha256:79e378f133877677c78246b5d5233384c8dca0bf47ec32fef7f152e7ea69bade")
 	}
 }
 
@@ -216,9 +221,6 @@ func (c *Controller) scanImage(id string, args []string, imageRef string, imageS
 	}
 
 	err = client.RemoveContainer(options)
-	if err != nil {
-		log.Println(err.Error())
-	}
 
 	abort <- true
 
