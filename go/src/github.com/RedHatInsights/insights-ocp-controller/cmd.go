@@ -4,7 +4,7 @@ import (
 	"log"
 	"os"
 
-	"github.com/RedHatInsights/insights-ocp/controller/pkg/controller"
+	"github.com/RedHatInsights/insights-ocp-controller/pkg/controller"
 	_ "github.com/openshift/origin/pkg/api/install"
 	osclient "github.com/openshift/origin/pkg/client"
 	"github.com/openshift/origin/pkg/cmd/util/clientcmd"
