@@ -9,6 +9,9 @@ import (
 	"bufio"
 	"strings"
 	"encoding/json"
+	"os/exec"
+	"net/http"
+	"bytes"
 
 	"github.com/fsouza/go-dockerclient"
 	osclient "github.com/openshift/origin/pkg/client"
@@ -79,19 +82,17 @@ func (c *Controller) ScanImages() {
 	}
 	for _, image := range imageList.Items {
 		log.Printf("Scanning image %s %s", image.DockerImageMetadata.ID, image.DockerImageReference)
-		/* c.scanImage("image.DockerImageMetadata.ID", 
-			getScanArgs(string(image.DockerImageReference) + ":latest", "/tmp/image-content8"),
+		c.scanImage(image.DockerImageMetadata.ID,
+			getScanArgs(string(image.DockerImageReference), "/tmp/image-content8"),
 			string(image.DockerImageReference),
 			image.DockerImageMetadata.ID)
-			*/
-
 	}
 
 	// Force known image scan
-	c.scanImage("image.DockerImageMetadata.ID", 
-			getScanArgs("openshift/wildfly-100-centos7", "/tmp/image-content8"), 
-			"openshift/wildfly-100-centos7", 
-			"sha256:01fde7095217610427a3fb133e0ff6003cc5958f65e956fa58aecde3f57d45ff")
+	// c.scanImage("image.DockerImageMetadata.ID",
+	// 		getScanArgs("openshift/wildfly-100-centos7", "/tmp/image-content8"),
+	// 		"openshift/wildfly-100-centos7",
+	// 		"sha256:01fde7095217610427a3fb133e0ff6003cc5958f65e956fa58aecde3f57d45ff")
 	return
 
 }
@@ -110,7 +111,7 @@ func (c *Controller) scanImage(id string, args []string, imageRef string, imageS
 				AttachStderr: true,
 				Tty:          true,
 				Entrypoint:   args,
-				Env: []string{"SCAN_API=" + os.Getenv("SCAN_API"),
+				Env: []string{"SCAN_API=" + os.Getenv("INSIGHTS_OCP_API_SERVICE_HOST") + ":8080",
 							  "INSIGHTS_USERNAME=" + os.Getenv("INSIGHTS_USERNAME"),
 							  "INSIGHTS_PASSWORD=" + os.Getenv("INSIGHTS_PASSWORD"),
 							  "INSIGHTS_AUTHMETHOD=" + os.Getenv("INSIGHTS_AUTHMETHOD")},
@@ -189,20 +190,26 @@ func (c *Controller) scanImage(id string, args []string, imageRef string, imageS
 	}(r, done)
 
 	err = client.StartContainer(container.ID, &docker.HostConfig{Privileged: true})
+
 	if err != nil {
 		log.Println("FAIL to start")
 		log.Println(err.Error())
 		return err
 	}
+
 	log.Println("Waiting")
 	status, err := client.WaitContainer(container.ID)
+
 	if err != nil {
 		log.Println("FAIL to wait")
 		log.Println(err.Error())
 		return err
 	}
+
 	log.Printf("Done waiting %d", status)
-	if len(insightsReport) > 0 {
+
+	if (len(insightsReport) > 0 && !strings.HasPrefix(insightsReport, "ERROR:")) {
+		c.postResults(insightsReport, imageSha)
 		c.annotateImage(imageRef, imageSha, insightsReport)
 	}
 
@@ -214,9 +221,21 @@ func (c *Controller) scanImage(id string, args []string, imageRef string, imageS
 	err = client.RemoveContainer(options)
 
 	abort <- true
-
-
 	return err
+}
+
+func (c *Controller) postResults(results string, imageSha string) {
+	api := "http://" + os.Getenv("SCAN_API") + "/reports"
+	req, err := http.NewRequest("POST", api + "/" + imageSha, bytes.NewBufferString(results))
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Fatalf(err.Error())
+	}
+	defer resp.Body.Close()
+	log.Printf("Status: %s", resp.Status)
 }
 
 func (c *Controller) annotateImage(imageRef string, imageSha string, annotation string){
