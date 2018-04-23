@@ -80,6 +80,11 @@ func (c *Controller) ScanImages() {
 		return
 	}
 	for _, image := range imageList.Items {
+		log.Printf("--")
+		log.Printf("%+v\n", image)
+		log.Printf("--")
+		log.Printf("%+v\n", image.DockerImageMetadata)
+		log.Printf("--")
 		log.Printf("Scanning image %s %s", image.DockerImageMetadata.ID, image.DockerImageReference)
 		c.scanImage(image.DockerImageMetadata.ID,
 			getScanArgs(string(image.DockerImageReference), "/tmp/image-content8"),
