@@ -113,7 +113,8 @@ func (c *Controller) scanImage(id string, args []string, imageRef string, imageS
 				Env: []string{"SCAN_API=" + os.Getenv("INSIGHTS_OCP_API_SERVICE_HOST") + ":8080",
 							  "INSIGHTS_USERNAME=" + os.Getenv("INSIGHTS_USERNAME"),
 							  "INSIGHTS_PASSWORD=" + os.Getenv("INSIGHTS_PASSWORD"),
-							  "INSIGHTS_AUTHMETHOD=" + os.Getenv("INSIGHTS_AUTHMETHOD")},
+							  "INSIGHTS_AUTHMETHOD=" + os.Getenv("INSIGHTS_AUTHMETHOD"),
+							  "INSIGHTS_PROXY=" + os.Getenv("INSIGHTS_PROXY")},
 			},
 			HostConfig: &docker.HostConfig{
 				Privileged: true,
