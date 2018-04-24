@@ -1,0 +1,1 @@
+tar cf insights-ocp-controller-0.0.1.tar.gz --transform s/insights-ocp-controller/insights-ocp-controller-0.0.1/ -C .. .; mock -r insights --spec insights-ocp-controller.spec  --sources . --resultdir /root/brew/mock/srpms/rhel6 --buildsrpm; mock -r /etc/mock/insights.cfg /root/brew/mock/srpms/rhel6/insights-ocp-controller-0.0.1-0.el7.src.rpm --resultdir=.build/
