@@ -81,10 +81,15 @@ func (c *Controller) ScanImages() {
 	}
 	for _, image := range imageList.Items {
 		log.Printf("Scanning image %s %s", image.DockerImageMetadata.ID, image.DockerImageReference)
-		c.scanImage(image.DockerImageMetadata.ID,
-			getScanArgs(string(image.DockerImageReference), "/tmp/image-content8"),
-			string(image.DockerImageReference),
-			image.DockerImageMetadata.ID)
+		if c.imageExists(image.DockerImageMetadata.ID){
+			log.Printf("Image exists. Scanning")
+			c.scanImage(image.DockerImageMetadata.ID,
+				getScanArgs(string(image.DockerImageReference), "/tmp/image-content8"),
+				string(image.DockerImageReference),
+				image.DockerImageMetadata.ID)
+		}else{
+			log.Printf("Image does not exist. Skipping.")
+		}
 	}
 
 	// Force known image scan
@@ -95,6 +100,18 @@ func (c *Controller) ScanImages() {
 	return
 
 }
+
+func (c *Controller) imageExists(id string) bool {
+	client, err := docker.NewVersionedClient(endpoint, "1.22")
+
+	_, err := client.InspectImage(id)
+	if err != nil {
+		log.Printf("Error testing if image %s exists: %s\n", id, err)
+		return false
+	}
+	return true
+}
+
 
 func (c *Controller) scanImage(id string, args []string, imageRef string, imageSha string) error {
 	endpoint := "unix:///var/run/docker.sock"
