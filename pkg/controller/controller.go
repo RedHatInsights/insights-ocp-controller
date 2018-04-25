@@ -486,7 +486,7 @@ func (c *Controller) UpdateImageAnnotationInfo(imageSha string, newInfo string) 
 		oldAnnotations = make(map[string]string)
 	}
 
-	annotator := annotate.NewInsightsAnnotator("0.1", "https://openshift.com/insights")
+	annotator := annotate.NewInsightsAnnotator("0.1", os.Getenv("SCAN_UI"))
 	var res common.ScanResponse
 	newInfoBytes := []byte(newInfo)
 	json.Unmarshal(newInfoBytes, &res)
