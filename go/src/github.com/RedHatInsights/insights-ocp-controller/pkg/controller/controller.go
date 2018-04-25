@@ -102,11 +102,16 @@ func (c *Controller) ScanImages() {
 }
 
 func (c *Controller) imageExists(id string) bool {
-	client, err := docker.NewVersionedClient(endpoint, "1.22")
+	endpoint := "unix:///var/run/docker.sock"
+	client, dockerErr := docker.NewVersionedClient(endpoint, "1.22")
+	if dockerErr != nil {
+		log.Printf("Error creating docker client: %s\n", dockerErr)
+		return false
+	}
 
-	_, err := client.InspectImage(id)
-	if err != nil {
-		log.Printf("Error testing if image %s exists: %s\n", id, err)
+	_, inspectErr := client.InspectImage(id)
+	if inspectErr != nil {
+		log.Printf("Error testing if image %s exists: %s\n", id, inspectErr)
 		return false
 	}
 	return true
