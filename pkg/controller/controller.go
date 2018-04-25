@@ -5,12 +5,14 @@ import (
 	"log"
 	"sync"
 	"io"
+	"io/ioutil"
 	"time"
 	"bufio"
 	"strings"
 	"encoding/json"
 	"net/http"
 	"bytes"
+	"strconv"
 
 	"github.com/fsouza/go-dockerclient"
 	osclient "github.com/openshift/origin/pkg/client"
@@ -79,21 +81,242 @@ func (c *Controller) ScanImages() {
 		log.Println("No images")
 		return
 	}
+
+	// Get the list of images to scan
 	for _, image := range imageList.Items {
 		log.Printf("Scanning image %s %s", image.DockerImageMetadata.ID, image.DockerImageReference)
-		c.scanImage(image.DockerImageMetadata.ID,
+
+		// Check in to schedule the scan
+		log.Printf("Checking in with Master Chief...")
+		if c.canScan(image.DockerImageMetadata.ID) {
+			log.Printf("Check in successful.");
+			log.Printf("Beginning scan.");
+			// Scan the thing
+			c.scanImage(image.DockerImageMetadata.ID,
 			getScanArgs(string(image.DockerImageReference), "/tmp/image-content8"),
 			string(image.DockerImageReference),
 			image.DockerImageMetadata.ID)
+			// Check back in with the Chief (Dequeue)
+			log.Printf("Removing from queue...")
+			c.removeFromQueue(image.DockerImageMetadata.ID)
+		}else{
+			log.Printf("Check in not succesful.");
+			log.Printf("Aborting scan.");
+		}
 	}
 
-	// Force known image scan
-	// c.scanImage("image.DockerImageMetadata.ID",
-	// 		getScanArgs("openshift/wildfly-100-centos7", "/tmp/image-content8"),
-	// 		"openshift/wildfly-100-centos7",
-	// 		"sha256:01fde7095217610427a3fb133e0ff6003cc5958f65e956fa58aecde3f57d45ff")
 	return
 
+}
+
+func (c *Controller) removeFromQueue(id string) bool {
+	// Setup API Request
+	api := "http://" + os.Getenv("SCAN_API") + "/dequeue"
+	req, err := http.NewRequest("POST", api + "/" + id, bytes.NewBufferString("{}"))
+	if err != nil {
+		log.Printf("Error setting up new request to Master Chief:")
+		log.Fatalf(err.Error())
+	}
+	req.Header.Set("Content-Type", "application/json")
+	dequeued := false
+
+	// Flag to stop trying to communicate with the Chief
+	// We always keep trying to check in with the Chief
+	// If MAX_RETRIES is 0, then try forever, otherwise X number of times
+	// Set RETRY_SECONDS for number of seconds to wat between Chief calls
+	keepTrying := true
+	retryCounter := 0
+	var maxRetries int
+	var maxRetriesErr error
+	if len(os.Getenv("MAX_RETRIES")) == 0{
+		maxRetries = 0
+	}else{
+		maxRetries, maxRetriesErr = strconv.Atoi(os.Getenv("MAX_RETRIES"))
+	}
+	if maxRetriesErr != nil {
+		log.Printf("Error reading MAX_RETRIES from environment configuration:")
+		log.Printf(maxRetriesErr.Error())
+		log.Printf("Defaulting MAX_RETRIES to 0, infinite.")
+		maxRetries = 0
+	}
+	var retrySeconds int
+	var retrySecondsErr error
+	var retrySecondsDuration time.Duration
+	if len(os.Getenv("RETRY_SECONDS")) == 0{
+		retrySeconds = 60
+		retrySecondsDuration = time.Duration(retrySeconds)*time.Second
+	}else{
+		retrySeconds, retrySecondsErr = strconv.Atoi(os.Getenv("RETRY_SECONDS"))
+		retrySecondsDuration = time.Duration(retrySeconds)*time.Second
+	}
+	if retrySecondsErr != nil {
+		log.Printf("Error reading RETRY_SECONDS from environment configuration:")
+		log.Printf(retrySecondsErr.Error())
+		log.Printf("Defaulting RETRY_SECONDS to 60.")
+		retrySeconds = 60
+		retrySecondsDuration = time.Duration(retrySeconds)*time.Second
+	}
+
+	// Check in with the Chief
+	for keepTrying {
+		// Only bother incrementing the counter if there is a defined limit
+		if ( retryCounter != 0 ){
+			log.Printf("Keep trying Dequeue!")
+		}
+		if ( maxRetries != 0 ){
+			retryCounter = retryCounter + 1
+			log.Printf("Max retries is %s and counter is at %s.", maxRetries, retryCounter)
+		}
+
+		// Make request to Chief
+		client := &http.Client{Timeout: time.Second * 30}
+		resp, err := client.Do(req)
+		if err != nil {
+			log.Printf("Dequeue Client.Do(req) Error:")
+			log.Printf(err.Error())
+		}else{
+			defer resp.Body.Close()
+			body, readAllErr := ioutil.ReadAll(resp.Body)
+			if readAllErr != nil {
+				log.Printf("Dequeue Client ioutil.ReadAll Error:")
+				log.Printf(readAllErr.Error())
+			}
+			log.Printf("Master Chief Dequeue Status: %s", resp.Status)
+			log.Printf("Master Chief Dequeue Body: %s", body)
+		}
+		
+		// 204 successful dequeue
+		if (err == nil) && (resp.StatusCode == 204){
+			log.Printf("Dequeue successful.")	
+			dequeued = true
+			keepTrying = false
+		// 412 doesn't exist in queue, error
+		}else if (err == nil) && (resp.StatusCode == 412){
+			log.Printf("Dequeue unsuccessful.")
+			keepTrying = false
+		// Otherwise wait, then retry
+		}else{
+			log.Printf("Dequeue Request made. Waiting to begin next request.")
+			time.Sleep(retrySecondsDuration)
+		}
+	}
+	return dequeued
+}
+
+func (c *Controller) canScan(id string) bool {
+	// Setup API Request
+	api := "http://" + os.Getenv("SCAN_API") + "/queue"
+	req, err := http.NewRequest("POST", api + "/" + id, bytes.NewBufferString("{}"))
+	if err != nil {
+		log.Printf("Error setting up new request to Master Chief:")
+		log.Fatalf(err.Error())
+	}
+	req.Header.Set("Content-Type", "application/json")
+	canScan := false
+
+	// Flag to stop trying to communicate with the Chief
+	// We always keep trying to check in with the Chief
+	// If MAX_RETRIES is 0, then try forever, otherwise X number of times
+	// Set RETRY_SECONDS for number of seconds to wat between Chief calls
+	keepTrying := true
+	retryCounter := 0
+	var maxRetries int
+	var maxRetriesErr error
+	if len(os.Getenv("MAX_RETRIES")) == 0{
+		maxRetries = 0
+	}else{
+		maxRetries, maxRetriesErr = strconv.Atoi(os.Getenv("MAX_RETRIES"))
+	}
+	if maxRetriesErr != nil {
+		log.Printf("Error reading MAX_RETRIES from environment configuration:")
+		log.Printf(maxRetriesErr.Error())
+		log.Printf("Defaulting MAX_RETRIES to 0, infinite.")
+		maxRetries = 0
+	}
+	var retrySeconds int
+	var retrySecondsErr error
+	var retrySecondsDuration time.Duration
+	if len(os.Getenv("RETRY_SECONDS")) == 0{
+		retrySeconds = 60
+		retrySecondsDuration = time.Duration(retrySeconds)*time.Second
+	}else{
+		retrySeconds, retrySecondsErr = strconv.Atoi(os.Getenv("RETRY_SECONDS"))
+		retrySecondsDuration = time.Duration(retrySeconds)*time.Second
+	}
+	if retrySecondsErr != nil {
+		log.Printf("Error reading RETRY_SECONDS from environment configuration:")
+		log.Printf(retrySecondsErr.Error())
+		log.Printf("Defaulting RETRY_SECONDS to 60.")
+		retrySeconds = 60
+		retrySecondsDuration = time.Duration(retrySeconds)*time.Second
+	}
+
+	// Check in with the Chief
+	isHalted := false
+	for keepTrying {
+		// Only bother incrementing the counter if there is a defined limit
+		// and we are not in a suspended state
+		if ( retryCounter != 0 ){
+			log.Printf("Keep trying Queue!")
+		}
+		if ( maxRetries != 0 ) && ( !isHalted ){
+			retryCounter = retryCounter + 1
+			log.Printf("Max retries is %s and counter is at %s.", maxRetries, retryCounter)
+		}
+
+		// Reset isHalted
+		isHalted = false
+		
+		// Make request to Chief
+		client := &http.Client{Timeout: time.Second * 30}
+		resp, err := client.Do(req)
+		if err != nil {
+			log.Printf("Queue Client.Do(req) Error:")
+			log.Printf(err.Error())
+		}else{
+			defer resp.Body.Close()
+			body, readAllErr := ioutil.ReadAll(resp.Body)
+			if readAllErr != nil {
+				log.Printf("Queue Client ioutil.ReadAll Error:")
+				log.Printf(readAllErr.Error())
+			}
+			log.Printf("Master Chief Queue Status: %s", resp.Status)
+			log.Printf("Master Chief Queue Body: %s", body)
+		}
+		
+		// If we get 201 then were good to go
+		if (err == nil) && (resp.StatusCode == 201){
+			log.Printf("Master Chief says we can scan the image.")
+			canScan = true
+			keepTrying = false
+		// If we get 423 then it is being scanned elsewhere
+		}else if (err == nil) && (resp.StatusCode == 423){
+			log.Printf("Master Chief says someone else is scanning this image. Aborting.")
+			keepTrying = false
+		// If we get 412 then its been scanned in the past 24 hours
+		}else if (err == nil) && (resp.StatusCode == 412){
+			log.Printf("Master Chief says this was scanned within the past 24 hours. Aborting.")
+			keepTrying = false
+		// If we get a 403 then the server has too many scan jobs going, try again after timeout
+		} else if (err == nil) && (resp.StatusCode == 403){
+			log.Printf("Master Chief says too many concurrent scan jobs. Wait.")
+		// If we get a 409 then HALT all scanning
+		} else if (err == nil) && (resp.StatusCode == 409){
+			log.Printf("Master Chief says HALT.")
+			log.Printf("Continue checking scan status with Chief for this image.")
+			isHalted = true
+			retryCounter = 0
+		// If we have exceeded the MAX_RETRIES limit then stop
+		}else if(retryCounter >= maxRetries) && (maxRetries != 0){
+			log.Printf("MAX_RETRIES exceeded. Stop.")
+			keepTrying = false
+		// Otherwise wait, then retry
+		}else{
+			log.Printf("Queue Request made. Waiting to begin next request.")
+			time.Sleep(retrySecondsDuration)
+		}
+	}
+	return canScan
 }
 
 func (c *Controller) scanImage(id string, args []string, imageRef string, imageSha string) error {
