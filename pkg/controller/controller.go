@@ -90,16 +90,18 @@ func (c *Controller) ScanImages() {
 		log.Printf("Checking in with Master Chief...")
 		if c.canScan(image.DockerImageMetadata.ID) {
 			log.Printf("Check in successful.");
-			log.Printf("Beginning scan.");
-			// Scan the thing
-			c.scanImage(image.DockerImageMetadata.ID,
-			getScanArgs(string(image.DockerImageReference), "/tmp/image-content8"),
-			string(image.DockerImageReference),
-			image.DockerImageMetadata.ID)
-			// Check back in with the Chief (Dequeue)
-			log.Printf("Removing from queue...")
-			c.removeFromQueue(image.DockerImageMetadata.ID)
-		}else{
+			if c.imageExists(image.DockerImageMetadata.ID) {
+				log.Printf("Beginning scan.");
+				// Scan the thing
+				c.scanImage(image.DockerImageMetadata.ID,
+				getScanArgs(string(image.DockerImageReference), "/tmp/image-content8"),
+				string(image.DockerImageReference),
+				image.DockerImageMetadata.ID)
+				// Check back in with the Chief (Dequeue)
+				log.Printf("Removing from queue...")
+				c.removeFromQueue(image.DockerImageMetadata.ID)
+			}
+		} else {
 			log.Printf("Check in not succesful.");
 			log.Printf("Aborting scan.");
 		}
@@ -201,6 +203,22 @@ func (c *Controller) removeFromQueue(id string) bool {
 		}
 	}
 	return dequeued
+}
+
+func (c *Controller) imageExists(id string) bool {
+    endpoint := "unix:///var/run/docker.sock"
+    client, dockerErr := docker.NewVersionedClient(endpoint, "1.22")
+    if dockerErr != nil {
+        log.Printf("Error creating docker client: %s\n", dockerErr)
+        return false
+    }
+
+    _, inspectErr := client.InspectImage(id)
+    if inspectErr != nil {
+        log.Printf("Error testing if image %s exists: %s\n", id, inspectErr)
+        return false
+    }
+    return true
 }
 
 func (c *Controller) canScan(id string) bool {
