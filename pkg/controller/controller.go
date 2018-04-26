@@ -87,10 +87,12 @@ func (c *Controller) ScanImages() {
 		log.Printf("Scanning image %s %s", image.DockerImageMetadata.ID, image.DockerImageReference)
 
 		// Check in to schedule the scan
-		log.Printf("Checking in with Master Chief...")
-		if c.canScan(image.DockerImageMetadata.ID) {
-			log.Printf("Check in successful.");
-			if c.imageExists(image.DockerImageMetadata.ID) {
+		log.Printf("Checking that image exists locally first...")
+		if c.imageExists(image.DockerImageMetadata.ID) {
+			log.Printf("Image exists.")
+			log.Printf("Check in with Master Chief...")
+			if c.canScan(image.DockerImageMetadata.ID) {
+				log.Printf("Chief check-in successful.")
 				log.Printf("Beginning scan.");
 				// Scan the thing
 				c.scanImage(image.DockerImageMetadata.ID,
@@ -98,11 +100,12 @@ func (c *Controller) ScanImages() {
 				string(image.DockerImageReference),
 				image.DockerImageMetadata.ID)
 				// Check back in with the Chief (Dequeue)
+				log.Printf("Scan complete.")
 				log.Printf("Removing from queue...")
 				c.removeFromQueue(image.DockerImageMetadata.ID)
 			}
 		} else {
-			log.Printf("Check in not succesful.");
+			log.Printf("Image does not exist.");
 			log.Printf("Aborting scan.");
 		}
 	}
