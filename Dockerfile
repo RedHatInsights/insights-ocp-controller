@@ -7,12 +7,12 @@ LABEL name="containers/insights-ocp-controller"
 LABEL version="0.1"
 LABEL summary="Controller container for Red Hat Insights on Openshift"
 
-COPY . /
+COPY . /go/src/github.com/RedHatInsights/insights-ocp-controller
 ENV GOPATH=/go
 
 WORKDIR /go/src/github.com/RedHatInsights/insights-ocp-controller
 
 RUN yum install -y golang git && \
-    go build -o /insights-controller
+   go build -o /insights-controller
 
 ENTRYPOINT ["./insights-controller"]
