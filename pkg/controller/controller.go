@@ -88,9 +88,9 @@ func (c *Controller) ScanImages() {
 
 		// Check in to schedule the scan
 		log.Printf("Checking in with Master Chief...")
-		if c.canScan(image.DockerImageMetadata.ID) {
+		if c.imageExists(image.DockerImageMetadata.ID) {
 			log.Printf("Check in successful.");
-			if c.imageExists(image.DockerImageMetadata.ID) {
+			if c.canScan(image.DockerImageMetadata.ID) {
 				log.Printf("Beginning scan.");
 				// Scan the thing
 				c.scanImage(image.DockerImageMetadata.ID,
