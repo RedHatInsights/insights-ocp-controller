@@ -453,7 +453,7 @@ func (c *Controller) scanImage(id string, args []string, imageRef string, imageS
 	log.Printf("Done waiting %d", status)
 
 	if (len(insightsReport) > 0 && !strings.HasPrefix(insightsReport, "ERROR:")) {
-		c.postResults(insightsReport, imageSha)
+		c.postResults(insightsReport, imageSha, imageRef)
 		c.annotateImage(imageRef, imageSha, insightsReport)
 	}
 
@@ -468,9 +468,11 @@ func (c *Controller) scanImage(id string, args []string, imageRef string, imageS
 	return err
 }
 
-func (c *Controller) postResults(results string, imageSha string) {
+func (c *Controller) postResults(results string, imageSha string, imageRef string) {
 	api := "http://" + os.Getenv("SCAN_API") + "/reports"
-	req, err := http.NewRequest("POST", api + "/" + imageSha, bytes.NewBufferString(results))
+	req, err := http.NewRequest(
+		"POST", api + "/" + imageSha + '?name=' + imageRef,
+		bytes.NewBufferString(results))
 	req.Header.Set("Content-Type", "application/json")
 
 	client := &http.Client{}
