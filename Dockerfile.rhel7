@@ -1,0 +1,15 @@
+FROM rhel7:7.5
+
+LABEL \
+      com.redhat.component="insights-ocp-controller-container" \
+      name="containers/insights-ocp-controller" \
+      version="0.0.1"
+
+RUN yum -y update-minimal --security --sec-severity=Important --sec-severity=Critical --setopt=tsflags=nodocs && \
+    yum install -y golang git && \
+    yum install -y insights-ocp-controller && \
+    yum clean all
+
+
+
+ENTRYPOINT ["/usr/bin/insights-ocp-controller"]
