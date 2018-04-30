@@ -471,7 +471,7 @@ func (c *Controller) scanImage(id string, args []string, imageRef string, imageS
 func (c *Controller) postResults(results string, imageSha string, imageRef string) {
 	api := "http://" + os.Getenv("SCAN_API") + "/reports"
 	req, err := http.NewRequest(
-		"POST", api + "/" + imageSha + '?name=' + imageRef,
+		"POST", api + "/" + imageSha + "?name=" + imageRef,
 		bytes.NewBufferString(results))
 	req.Header.Set("Content-Type", "application/json")
 
