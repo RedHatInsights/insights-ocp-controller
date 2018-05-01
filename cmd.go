@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"os"
+	"time"
 
 	"github.com/RedHatInsights/insights-ocp-controller/pkg/controller"
 	_ "github.com/openshift/origin/pkg/api/install"
@@ -40,7 +41,9 @@ func main() {
 	}
 
 	c := controller.NewController(openshiftClient, kubeClient)
-
-	c.ScanImages()
+	for true {
+		c.ScanImages()
+		time.Sleep(time.Hour)
+	}
 
 }
