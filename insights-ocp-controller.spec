@@ -5,7 +5,7 @@
 
 Name:           insights-ocp-controller
 Version:        0.0.1
-Release:        0.alpha1%{?dist}
+Release:        1%{?dist}
 Summary:        Tool for extracting and serving content of container images
 License:        ASL 2.0
 URL:            https://github.com/redhatinsights/insights-ocp-controller
@@ -33,5 +33,8 @@ install -p -m 0755 ./insights-ocp-controller %{buildroot}%{_bindir}/insights-ocp
 %{_bindir}/insights-ocp-controller
 
 %changelog
+* Wed May 02 2018 Lindani Phiri <lphiri@redhat.com> - 0.0.1-1
+- Initial Release
+
 * Wed Apr 25 2018 Lindani Phiri <lphiri@redhat.com> - 0.0.1-0.alpha1
 - Initial Build (Alpha)
