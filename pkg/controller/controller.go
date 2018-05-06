@@ -1,18 +1,17 @@
 package controller
 
 import (
-	"os"
-	"log"
-	"sync"
-	"io"
-	"io/ioutil"
-	"time"
-	"bufio"
-	"strings"
-	"encoding/json"
-	"net/http"
 	"bytes"
+	"encoding/json"
+	"fmt"
+	"io/ioutil"
+	"log"
+	"net/http"
+	"os"
+	"path"
 	"strconv"
+	"sync"
+	"time"
 
 	"github.com/fsouza/go-dockerclient"
 	osclient "github.com/openshift/origin/pkg/client"
@@ -24,7 +23,9 @@ import (
 	kclient "k8s.io/kubernetes/pkg/client/unversioned"
 	"k8s.io/kubernetes/pkg/runtime"
 
+	iclient "github.com/RedHatInsights/insights-goapi/client"
 	"github.com/RedHatInsights/insights-goapi/common"
+	"github.com/RedHatInsights/insights-goapi/container"
 	"github.com/RedHatInsights/insights-goapi/openshift"
 )
 
@@ -40,18 +41,6 @@ type Controller struct {
 type ScanResult struct {
 	completed bool
 	scanId    string
-}
-
-func getScanArgs(imageID string, mountPoint string) []string {
-
-	args := []string{}
-	args = append(args, "./insights-scanner")
-	args = append(args, "-image")
-	args = append(args, imageID)
-	args = append(args, "-mount_path")
-	args = append(args, mountPoint)
-
-	return args
 }
 
 func NewController(os *osclient.Client, kc *kclient.Client) *Controller {
@@ -93,20 +82,23 @@ func (c *Controller) ScanImages() {
 			log.Printf("Check in with Master Chief...")
 			if c.canScan(image.DockerImageMetadata.ID) {
 				log.Printf("Chief check-in successful.")
-				log.Printf("Beginning scan.");
+				log.Printf("Beginning scan.")
 				// Scan the thing
-				c.scanImage(image.DockerImageMetadata.ID,
-				getScanArgs(string(image.DockerImageReference), "/tmp/image-content8"),
-				string(image.DockerImageReference),
-				image.DockerImageMetadata.ID)
+				err := c.scanImage(image.DockerImageMetadata.ID,
+					string(image.DockerImageReference),
+					image.DockerImageMetadata.ID)
 				// Check back in with the Chief (Dequeue)
-				log.Printf("Scan complete.")
+				if err == nil {
+					log.Printf("Scan completed successfully")
+				} else {
+					log.Printf("Scan completed with err %s ", err)
+				}
 				log.Printf("Removing from queue...")
 				c.removeFromQueue(image.DockerImageMetadata.ID)
 			}
 		} else {
-			log.Printf("Image does not exist.");
-			log.Printf("Aborting scan.");
+			log.Printf("Image does not exist.")
+			log.Printf("Aborting scan.")
 		}
 	}
 
@@ -117,7 +109,7 @@ func (c *Controller) ScanImages() {
 func (c *Controller) removeFromQueue(id string) bool {
 	// Setup API Request
 	api := "http://" + os.Getenv("SCAN_API") + "/dequeue"
-	req, err := http.NewRequest("POST", api + "/" + id, bytes.NewBufferString("{}"))
+	req, err := http.NewRequest("POST", api+"/"+id, bytes.NewBufferString("{}"))
 	if err != nil {
 		log.Printf("Error setting up new request to Master Chief:")
 		log.Fatalf(err.Error())
@@ -133,9 +125,9 @@ func (c *Controller) removeFromQueue(id string) bool {
 	retryCounter := 0
 	var maxRetries int
 	var maxRetriesErr error
-	if len(os.Getenv("MAX_RETRIES")) == 0{
+	if len(os.Getenv("MAX_RETRIES")) == 0 {
 		maxRetries = 0
-	}else{
+	} else {
 		maxRetries, maxRetriesErr = strconv.Atoi(os.Getenv("MAX_RETRIES"))
 	}
 	if maxRetriesErr != nil {
@@ -147,30 +139,30 @@ func (c *Controller) removeFromQueue(id string) bool {
 	var retrySeconds int
 	var retrySecondsErr error
 	var retrySecondsDuration time.Duration
-	if len(os.Getenv("RETRY_SECONDS")) == 0{
+	if len(os.Getenv("RETRY_SECONDS")) == 0 {
 		retrySeconds = 60
-		retrySecondsDuration = time.Duration(retrySeconds)*time.Second
-	}else{
+		retrySecondsDuration = time.Duration(retrySeconds) * time.Second
+	} else {
 		retrySeconds, retrySecondsErr = strconv.Atoi(os.Getenv("RETRY_SECONDS"))
-		retrySecondsDuration = time.Duration(retrySeconds)*time.Second
+		retrySecondsDuration = time.Duration(retrySeconds) * time.Second
 	}
 	if retrySecondsErr != nil {
 		log.Printf("Error reading RETRY_SECONDS from environment configuration:")
 		log.Printf(retrySecondsErr.Error())
 		log.Printf("Defaulting RETRY_SECONDS to 60.")
 		retrySeconds = 60
-		retrySecondsDuration = time.Duration(retrySeconds)*time.Second
+		retrySecondsDuration = time.Duration(retrySeconds) * time.Second
 	}
 
 	// Check in with the Chief
 	for keepTrying {
 		// Only bother incrementing the counter if there is a defined limit
-		if ( retryCounter != 0 ){
+		if retryCounter != 0 {
 			log.Printf("Keep trying Dequeue!")
 		}
-		if ( maxRetries != 0 ){
+		if maxRetries != 0 {
 			retryCounter = retryCounter + 1
-			log.Printf("Max retries is %s and counter is at %s.", maxRetries, retryCounter)
+			log.Printf("Max retries is %d and counter is at %d.", maxRetries, retryCounter)
 		}
 
 		// Make request to Chief
@@ -179,7 +171,7 @@ func (c *Controller) removeFromQueue(id string) bool {
 		if err != nil {
 			log.Printf("Dequeue Client.Do(req) Error:")
 			log.Printf(err.Error())
-		}else{
+		} else {
 			defer resp.Body.Close()
 			body, readAllErr := ioutil.ReadAll(resp.Body)
 			if readAllErr != nil {
@@ -189,18 +181,18 @@ func (c *Controller) removeFromQueue(id string) bool {
 			log.Printf("Master Chief Dequeue Status: %s", resp.Status)
 			log.Printf("Master Chief Dequeue Body: %s", body)
 		}
-		
+
 		// 204 successful dequeue
-		if (err == nil) && (resp.StatusCode == 204){
-			log.Printf("Dequeue successful.")	
+		if (err == nil) && (resp.StatusCode == 204) {
+			log.Printf("Dequeue successful.")
 			dequeued = true
 			keepTrying = false
-		// 412 doesn't exist in queue, error
-		}else if (err == nil) && (resp.StatusCode == 412){
+			// 412 doesn't exist in queue, error
+		} else if (err == nil) && (resp.StatusCode == 412) {
 			log.Printf("Dequeue unsuccessful.")
 			keepTrying = false
-		// Otherwise wait, then retry
-		}else{
+			// Otherwise wait, then retry
+		} else {
 			log.Printf("Dequeue Request made. Waiting to begin next request.")
 			time.Sleep(retrySecondsDuration)
 		}
@@ -209,25 +201,25 @@ func (c *Controller) removeFromQueue(id string) bool {
 }
 
 func (c *Controller) imageExists(id string) bool {
-    endpoint := "unix:///var/run/docker.sock"
-    client, dockerErr := docker.NewVersionedClient(endpoint, "1.22")
-    if dockerErr != nil {
-        log.Printf("Error creating docker client: %s\n", dockerErr)
-        return false
-    }
+	endpoint := "unix:///var/run/docker.sock"
+	client, dockerErr := docker.NewVersionedClient(endpoint, "1.22")
+	if dockerErr != nil {
+		log.Printf("Error creating docker client: %s\n", dockerErr)
+		return false
+	}
 
-    _, inspectErr := client.InspectImage(id)
-    if inspectErr != nil {
-        log.Printf("Error testing if image %s exists: %s\n", id, inspectErr)
-        return false
-    }
-    return true
+	_, inspectErr := client.InspectImage(id)
+	if inspectErr != nil {
+		log.Printf("Error testing if image %s exists: %s\n", id, inspectErr)
+		return false
+	}
+	return true
 }
 
 func (c *Controller) canScan(id string) bool {
 	// Setup API Request
 	api := "http://" + os.Getenv("SCAN_API") + "/queue"
-	req, err := http.NewRequest("POST", api + "/" + id, bytes.NewBufferString("{}"))
+	req, err := http.NewRequest("POST", api+"/"+id, bytes.NewBufferString("{}"))
 	if err != nil {
 		log.Printf("Error setting up new request to Master Chief:")
 		log.Fatalf(err.Error())
@@ -243,9 +235,9 @@ func (c *Controller) canScan(id string) bool {
 	retryCounter := 0
 	var maxRetries int
 	var maxRetriesErr error
-	if len(os.Getenv("MAX_RETRIES")) == 0{
+	if len(os.Getenv("MAX_RETRIES")) == 0 {
 		maxRetries = 0
-	}else{
+	} else {
 		maxRetries, maxRetriesErr = strconv.Atoi(os.Getenv("MAX_RETRIES"))
 	}
 	if maxRetriesErr != nil {
@@ -257,19 +249,19 @@ func (c *Controller) canScan(id string) bool {
 	var retrySeconds int
 	var retrySecondsErr error
 	var retrySecondsDuration time.Duration
-	if len(os.Getenv("RETRY_SECONDS")) == 0{
+	if len(os.Getenv("RETRY_SECONDS")) == 0 {
 		retrySeconds = 60
-		retrySecondsDuration = time.Duration(retrySeconds)*time.Second
-	}else{
+		retrySecondsDuration = time.Duration(retrySeconds) * time.Second
+	} else {
 		retrySeconds, retrySecondsErr = strconv.Atoi(os.Getenv("RETRY_SECONDS"))
-		retrySecondsDuration = time.Duration(retrySeconds)*time.Second
+		retrySecondsDuration = time.Duration(retrySeconds) * time.Second
 	}
 	if retrySecondsErr != nil {
 		log.Printf("Error reading RETRY_SECONDS from environment configuration:")
 		log.Printf(retrySecondsErr.Error())
 		log.Printf("Defaulting RETRY_SECONDS to 60.")
 		retrySeconds = 60
-		retrySecondsDuration = time.Duration(retrySeconds)*time.Second
+		retrySecondsDuration = time.Duration(retrySeconds) * time.Second
 	}
 
 	// Check in with the Chief
@@ -277,24 +269,24 @@ func (c *Controller) canScan(id string) bool {
 	for keepTrying {
 		// Only bother incrementing the counter if there is a defined limit
 		// and we are not in a suspended state
-		if ( retryCounter != 0 ){
+		if retryCounter != 0 {
 			log.Printf("Keep trying Queue!")
 		}
-		if ( maxRetries != 0 ) && ( !isHalted ){
+		if (maxRetries != 0) && (!isHalted) {
 			retryCounter = retryCounter + 1
 			log.Printf("Max retries is %s and counter is at %s.", maxRetries, retryCounter)
 		}
 
 		// Reset isHalted
 		isHalted = false
-		
+
 		// Make request to Chief
 		client := &http.Client{Timeout: time.Second * 30}
 		resp, err := client.Do(req)
 		if err != nil {
 			log.Printf("Queue Client.Do(req) Error:")
 			log.Printf(err.Error())
-		}else{
+		} else {
 			defer resp.Body.Close()
 			body, readAllErr := ioutil.ReadAll(resp.Body)
 			if readAllErr != nil {
@@ -304,35 +296,35 @@ func (c *Controller) canScan(id string) bool {
 			log.Printf("Master Chief Queue Status: %s", resp.Status)
 			log.Printf("Master Chief Queue Body: %s", body)
 		}
-		
+
 		// If we get 201 then were good to go
-		if (err == nil) && (resp.StatusCode == 201){
+		if (err == nil) && (resp.StatusCode == 201) {
 			log.Printf("Master Chief says we can scan the image.")
 			canScan = true
 			keepTrying = false
-		// If we get 423 then it is being scanned elsewhere
-		}else if (err == nil) && (resp.StatusCode == 423){
+			// If we get 423 then it is being scanned elsewhere
+		} else if (err == nil) && (resp.StatusCode == 423) {
 			log.Printf("Master Chief says someone else is scanning this image. Aborting.")
 			keepTrying = false
-		// If we get 412 then its been scanned in the past 24 hours
-		}else if (err == nil) && (resp.StatusCode == 412){
+			// If we get 412 then its been scanned in the past 24 hours
+		} else if (err == nil) && (resp.StatusCode == 412) {
 			log.Printf("Master Chief says this was scanned within the past 24 hours. Aborting.")
 			keepTrying = false
-		// If we get a 403 then the server has too many scan jobs going, try again after timeout
-		} else if (err == nil) && (resp.StatusCode == 403){
+			// If we get a 403 then the server has too many scan jobs going, try again after timeout
+		} else if (err == nil) && (resp.StatusCode == 403) {
 			log.Printf("Master Chief says too many concurrent scan jobs. Wait.")
-		// If we get a 409 then HALT all scanning
-		} else if (err == nil) && (resp.StatusCode == 409){
+			// If we get a 409 then HALT all scanning
+		} else if (err == nil) && (resp.StatusCode == 409) {
 			log.Printf("Master Chief says HALT.")
 			log.Printf("Continue checking scan status with Chief for this image.")
 			isHalted = true
 			retryCounter = 0
-		// If we have exceeded the MAX_RETRIES limit then stop
-		}else if(retryCounter >= maxRetries) && (maxRetries != 0){
+			// If we have exceeded the MAX_RETRIES limit then stop
+		} else if (retryCounter >= maxRetries) && (maxRetries != 0) {
 			log.Printf("MAX_RETRIES exceeded. Stop.")
 			keepTrying = false
-		// Otherwise wait, then retry
-		}else{
+			// Otherwise wait, then retry
+		} else {
 			log.Printf("Queue Request made. Waiting to begin next request.")
 			time.Sleep(retrySecondsDuration)
 		}
@@ -340,138 +332,21 @@ func (c *Controller) canScan(id string) bool {
 	return canScan
 }
 
-func (c *Controller) scanImage(id string, args []string, imageRef string, imageSha string) error {
-	endpoint := "unix:///var/run/docker.sock"
-	client, err := docker.NewVersionedClient(endpoint, "1.22")
-	binds := []string{}
-	binds = append(binds, "/var/run/docker.sock:/var/run/docker.sock")
+func (c *Controller) scanImage(id string, imageRef string, imageSha string) error {
 
-	container, err := client.CreateContainer(
-		docker.CreateContainerOptions{
-			Config: &docker.Config{
-				Image:        os.Getenv("SCANNER_IMAGE"),
-				AttachStdout: true,
-				AttachStderr: true,
-				Tty:          true,
-				Entrypoint:   args,
-				Env: []string{"SCAN_API=" + os.Getenv("INSIGHTS_OCP_API_SERVICE_HOST") + ":8080",
-							  "INSIGHTS_USERNAME=" + os.Getenv("INSIGHTS_USERNAME"),
-							  "INSIGHTS_PASSWORD=" + os.Getenv("INSIGHTS_PASSWORD"),
-							  "INSIGHTS_AUTHMETHOD=" + os.Getenv("INSIGHTS_AUTHMETHOD"),
-							  "INSIGHTS_PROXY=" + os.Getenv("INSIGHTS_PROXY")},
-			},
-			HostConfig: &docker.HostConfig{
-				Privileged: true,
-				Binds:      binds,
-			},
-		})
-	if err != nil {
-		log.Println("FAIL")
-		log.Println(err.Error())
-		return err
+	insightsReport, err := c.mountAndScan(id, imageRef, imageSha)
+	if err == nil {
+		log.Printf("Scan successful")
+		c.postResults(insightsReport, imageSha, imageRef)   //TODO handle error
+		c.annotateImage(imageRef, imageSha, insightsReport) //TODO handle error
 	}
-	log.Println(container.ID)
-
-	done := make(chan ScanResult)
-	abort := make(chan bool, 1)
-	r, w := io.Pipe()
-
-    monitorOptions := docker.AttachToContainerOptions{
-        Container:    container.ID,
-        OutputStream: w,
-        ErrorStream:  w,
-        Stream:       true,
-        Stdout:       true,
-        Stderr:       true,
-        Logs:         true,
-        RawTerminal:  true,
-    }
-
-    go client.AttachToContainer(monitorOptions) // will block so isolate
-
-    go func(reader *io.PipeReader, a chan bool) {
-
-		for {
-			time.Sleep(time.Second)
-			select {
-			case _ = <-a:
-				log.Printf("Received IO shutdown for scanner.\n")
-				reader.Close()
-				return
-
-			default:
-			}
-
-		}
-
-	}(r, abort)
-
-	var insightsReport string
-	go func(reader io.Reader, sr chan ScanResult) {
-		scanner := bufio.NewScanner(reader)
-		scan := ScanResult{completed: false, scanId: ""}
-
-		for scanner.Scan() {
-			out := scanner.Text()
-			if strings.Contains(out, "Post Scan...") {
-				log.Printf("Found completed scan with result.\n")
-				scan.completed = true
-			}
-			log.Printf("%s\n", out)
-			insightsReport = out
-
-			if strings.Contains(out, "ScanContainerView{scanId=") {
-				cmd := strings.Split(out, "ScanContainerView{scanId=")
-				eos := strings.Index(cmd[1], ",")
-				scan.scanId = cmd[1][:eos]
-				log.Printf("Found scan ID %s with result.\n", scan.scanId)
-			}
-		}
-
-		log.Printf("Placing scan result %t from scanId %s into channel.\n", scan.completed, scan.scanId)
-		sr <- scan
-
-	}(r, done)
-
-	err = client.StartContainer(container.ID, &docker.HostConfig{Privileged: true})
-
-	if err != nil {
-		log.Println("FAIL to start")
-		log.Println(err.Error())
-		return err
-	}
-
-	log.Println("Waiting")
-	status, err := client.WaitContainer(container.ID)
-
-	if err != nil {
-		log.Println("FAIL to wait")
-		log.Println(err.Error())
-		return err
-	}
-
-	log.Printf("Done waiting %d", status)
-
-	if (len(insightsReport) > 0 && !strings.HasPrefix(insightsReport, "ERROR:")) {
-		c.postResults(insightsReport, imageSha, imageRef)
-		c.annotateImage(imageRef, imageSha, insightsReport)
-	}
-
-	options := docker.RemoveContainerOptions{
-		ID:            container.ID,
-		RemoveVolumes: true,
-	}
-
-	err = client.RemoveContainer(options)
-
-	abort <- true
 	return err
 }
 
 func (c *Controller) postResults(results string, imageSha string, imageRef string) {
 	api := "http://" + os.Getenv("SCAN_API") + "/reports"
 	req, err := http.NewRequest(
-		"POST", api + "/" + imageSha + "?name=" + imageRef,
+		"POST", api+"/"+imageSha+"?name="+imageRef,
 		bytes.NewBufferString(results))
 	req.Header.Set("Content-Type", "application/json")
 
@@ -484,7 +359,7 @@ func (c *Controller) postResults(results string, imageSha string, imageRef strin
 	log.Printf("Status: %s", resp.Status)
 }
 
-func (c *Controller) annotateImage(imageRef string, imageSha string, annotation string){
+func (c *Controller) annotateImage(imageRef string, imageSha string, annotation string) {
 	log.Printf("Annotating %s", imageRef)
 	log.Printf("Annotating %s", imageSha)
 	c.UpdateImageAnnotationInfo(imageSha, annotation)
@@ -532,4 +407,36 @@ func (c *Controller) UpdateImageAnnotationInfo(imageSha string, newInfo string) 
 	log.Println("Image annotated.")
 
 	return true
+}
+
+func (c *Controller) mountAndScan(id string, imageRef string, imageSha string) (report string, err error) {
+
+	scanDirectory := "/data/scanDir/scratch"
+	//cleanup first
+	os.RemoveAll(scanDirectory)
+	os.MkdirAll(scanDirectory, os.ModePerm)
+
+	scanOptions := container.NewDefaultImageMounterOptions()
+	scanOptions.DstPath = scanDirectory
+	scanOptions.Image = imageSha
+	mounter := container.NewDefaultImageMounter(*scanOptions)
+	_, image, _ := mounter.Mount()
+	rhaiDir := path.Join(scanOptions.DstPath, "etc", "redhat-access-insights")
+	machineidPath := path.Join(rhaiDir, "machine-id")
+	os.MkdirAll(rhaiDir, os.ModePerm)
+	err = ioutil.WriteFile(machineidPath, []byte("deeznuts"), 0644)
+	if err != nil {
+		fmt.Printf("ERROR: Scan failed writing machine ID %s", err)
+		return "", err
+	}
+	scanner := iclient.NewDefaultScanner()
+	_, out, err := scanner.ScanImage(scanOptions.DstPath, image.ID)
+	if err != nil {
+		fmt.Printf("ERROR: Scan failed %s", err)
+		return "", err
+	}
+	report = string(*out)
+	log.Printf("Scan results %s", report)
+	return report, nil
+
 }

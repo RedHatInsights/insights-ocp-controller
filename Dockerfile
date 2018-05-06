@@ -12,7 +12,7 @@ ENV GOPATH=/go
 
 WORKDIR /go/src/github.com/RedHatInsights/insights-ocp-controller
 
-RUN yum install -y golang git && \
+RUN yum install -y golang insights-client-3.0.2-2.fc27.noarch.rpm && \
    go build -o /insights-controller
 
 ENTRYPOINT ["./insights-controller"]
