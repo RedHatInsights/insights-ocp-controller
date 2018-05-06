@@ -86,7 +86,8 @@ func (c *Controller) ScanImages() {
 				// Scan the thing
 				err := c.scanImage(image.DockerImageMetadata.ID,
 					string(image.DockerImageReference),
-					image.DockerImageMetadata.ID)
+					image.DockerImageMetadata.ID,
+					image.GetName())
 				// Check back in with the Chief (Dequeue)
 				if err == nil {
 					log.Printf("Scan completed successfully")
@@ -332,21 +333,21 @@ func (c *Controller) canScan(id string) bool {
 	return canScan
 }
 
-func (c *Controller) scanImage(id string, imageRef string, imageSha string) error {
+func (c *Controller) scanImage(id string, imageRef string, imageSha string, openshiftSHA string) error {
 
 	insightsReport, err := c.mountAndScan(id, imageRef, imageSha)
 	if err == nil {
 		log.Printf("Scan successful")
-		c.postResults(insightsReport, imageSha, imageRef)   //TODO handle error
-		c.annotateImage(imageRef, imageSha, insightsReport) //TODO handle error
+		c.postResults(insightsReport, openshiftSHA, imageRef)             //TODO handle error
+		c.annotateImage(imageSha, openshiftSHA, imageRef, insightsReport) //TODO handle error
 	}
 	return err
 }
 
-func (c *Controller) postResults(results string, imageSha string, imageRef string) {
+func (c *Controller) postResults(results string, openshiftSHA string, imageRef string) {
 	api := "http://" + os.Getenv("SCAN_API") + "/reports"
 	req, err := http.NewRequest(
-		"POST", api+"/"+imageSha+"?name="+imageRef,
+		"POST", api+"/"+openshiftSHA+"?name="+imageRef,
 		bytes.NewBufferString(results))
 	req.Header.Set("Content-Type", "application/json")
 
@@ -359,48 +360,48 @@ func (c *Controller) postResults(results string, imageSha string, imageRef strin
 	log.Printf("Status: %s", resp.Status)
 }
 
-func (c *Controller) annotateImage(imageRef string, imageSha string, annotation string) {
-	log.Printf("Annotating %s", imageRef)
-	log.Printf("Annotating %s", imageSha)
-	c.UpdateImageAnnotationInfo(imageSha, annotation)
+func (c *Controller) annotateImage(imageSha string, openshiftSHA string, imageRef string, annotation string) {
+	log.Printf("Annotating local docker ID %s", imageSha)
+	log.Printf("Annotating Openshift ID %s", openshiftSHA)
+	c.updateImageAnnotationInfo(openshiftSHA, annotation)
 }
 
-func (c *Controller) UpdateImageAnnotationInfo(imageSha string, newInfo string) bool {
+func (c *Controller) updateImageAnnotationInfo(openshiftSha string, newInfo string) bool {
 
 	if c.openshiftClient == nil {
 		// if there's no OpenShift client, there can't be any image annotations
 		return false
 	}
 
-	image, err := c.openshiftClient.Images().Get(imageSha)
+	image, err := c.openshiftClient.Images().Get(openshiftSha)
 	if err != nil {
-		log.Printf("Job: Error getting image %s: %s\n", imageSha, err)
+		log.Printf("Job: Error getting image %s: %s\n", openshiftSha, err)
 		return false
 	}
 
 	oldAnnotations := image.ObjectMeta.Annotations
 	if oldAnnotations == nil {
-		log.Printf("Image %s has no annotations - creating object.\n", imageSha)
+		log.Printf("Image %s has no annotations - creating object.\n", openshiftSha)
 		oldAnnotations = make(map[string]string)
 	}
 
-	annotator := annotate.NewInsightsAnnotator("0.1", os.Getenv("SCAN_UI"))
+	annotator := annotate.NewInsightsAnnotator("0.1", c.getInsightsUILink())
 	var res common.ScanResponse
 	newInfoBytes := []byte(newInfo)
 	json.Unmarshal(newInfoBytes, &res)
-	secAnnotations := annotator.CreateSecurityAnnotation(&res, imageSha)
-	opsAnnotations := annotator.CreateOperationsAnnotation(&res, imageSha)
+	secAnnotations := annotator.CreateSecurityAnnotation(&res, openshiftSha)
+	opsAnnotations := annotator.CreateOperationsAnnotation(&res, openshiftSha)
 
 	annotationValues := make(map[string]string)
 	annotationValues["quality.images.openshift.io/vulnerability.redhatinsights"] = secAnnotations.ToJSON()
 	annotationValues["quality.images.openshift.io/operations.redhatinsights"] = opsAnnotations.ToJSON()
 	image.ObjectMeta.Annotations = annotationValues
 
-	log.Println("Annotate with information %s", annotationValues)
+	log.Printf("Annotate with information %s", annotationValues)
 
 	image, err = c.openshiftClient.Images().Update(image)
 	if err != nil {
-		log.Printf("Error updating annotations for image: %s. %s\n", imageSha, err)
+		log.Printf("Error updating annotations for image: %s. %s\n", openshiftSha, err)
 		return false
 	}
 
@@ -438,5 +439,16 @@ func (c *Controller) mountAndScan(id string, imageRef string, imageSha string) (
 	report = string(*out)
 	log.Printf("Scan results %s", report)
 	return report, nil
+}
+
+func (c *Controller) getInsightsUILink() string {
+	routeName := os.Getenv("SCAN_UI")
+	if len(routeName) == 0 {
+		routeName = "insights-ocp-ui"
+	}
+	routeAPI := c.openshiftClient.Routes("insights-scan") //TODO read this via downward api  metadata.namespace
+	route, _ := routeAPI.Get(routeName)
+	log.Printf("Route HOST is %s ", route.Spec.Host)
+	return "https://" + route.Spec.Host
 
 }
