@@ -1,18 +1,18 @@
 package controller
 
 import (
-	"os"
-	"log"
-	"sync"
+	"bufio"
+	"bytes"
+	"encoding/json"
 	"io"
 	"io/ioutil"
-	"time"
-	"bufio"
-	"strings"
-	"encoding/json"
+	"log"
 	"net/http"
-	"bytes"
+	"os"
 	"strconv"
+	"strings"
+	"sync"
+	"time"
 
 	"github.com/fsouza/go-dockerclient"
 	osclient "github.com/openshift/origin/pkg/client"
@@ -93,20 +93,21 @@ func (c *Controller) ScanImages() {
 			log.Printf("Check in with Master Chief...")
 			if c.canScan(image.DockerImageMetadata.ID) {
 				log.Printf("Chief check-in successful.")
-				log.Printf("Beginning scan.");
+				log.Printf("Beginning scan.")
 				// Scan the thing
 				c.scanImage(image.DockerImageMetadata.ID,
-				getScanArgs(string(image.DockerImageReference), "/tmp/image-content8"),
-				string(image.DockerImageReference),
-				image.DockerImageMetadata.ID)
+					getScanArgs(string(image.DockerImageReference), "/tmp/image-content8"),
+					string(image.DockerImageReference),
+					image.DockerImageMetadata.ID,
+					image.GetName())
 				// Check back in with the Chief (Dequeue)
 				log.Printf("Scan complete.")
 				log.Printf("Removing from queue...")
 				c.removeFromQueue(image.DockerImageMetadata.ID)
 			}
 		} else {
-			log.Printf("Image does not exist.");
-			log.Printf("Aborting scan.");
+			log.Printf("Image does not exist.")
+			log.Printf("Aborting scan.")
 		}
 	}
 
@@ -117,7 +118,7 @@ func (c *Controller) ScanImages() {
 func (c *Controller) removeFromQueue(id string) bool {
 	// Setup API Request
 	api := "http://" + os.Getenv("SCAN_API") + "/dequeue"
-	req, err := http.NewRequest("POST", api + "/" + id, bytes.NewBufferString("{}"))
+	req, err := http.NewRequest("POST", api+"/"+id, bytes.NewBufferString("{}"))
 	if err != nil {
 		log.Printf("Error setting up new request to Master Chief:")
 		log.Fatalf(err.Error())
@@ -133,9 +134,9 @@ func (c *Controller) removeFromQueue(id string) bool {
 	retryCounter := 0
 	var maxRetries int
 	var maxRetriesErr error
-	if len(os.Getenv("MAX_RETRIES")) == 0{
+	if len(os.Getenv("MAX_RETRIES")) == 0 {
 		maxRetries = 0
-	}else{
+	} else {
 		maxRetries, maxRetriesErr = strconv.Atoi(os.Getenv("MAX_RETRIES"))
 	}
 	if maxRetriesErr != nil {
@@ -147,28 +148,28 @@ func (c *Controller) removeFromQueue(id string) bool {
 	var retrySeconds int
 	var retrySecondsErr error
 	var retrySecondsDuration time.Duration
-	if len(os.Getenv("RETRY_SECONDS")) == 0{
+	if len(os.Getenv("RETRY_SECONDS")) == 0 {
 		retrySeconds = 60
-		retrySecondsDuration = time.Duration(retrySeconds)*time.Second
-	}else{
+		retrySecondsDuration = time.Duration(retrySeconds) * time.Second
+	} else {
 		retrySeconds, retrySecondsErr = strconv.Atoi(os.Getenv("RETRY_SECONDS"))
-		retrySecondsDuration = time.Duration(retrySeconds)*time.Second
+		retrySecondsDuration = time.Duration(retrySeconds) * time.Second
 	}
 	if retrySecondsErr != nil {
 		log.Printf("Error reading RETRY_SECONDS from environment configuration:")
 		log.Printf(retrySecondsErr.Error())
 		log.Printf("Defaulting RETRY_SECONDS to 60.")
 		retrySeconds = 60
-		retrySecondsDuration = time.Duration(retrySeconds)*time.Second
+		retrySecondsDuration = time.Duration(retrySeconds) * time.Second
 	}
 
 	// Check in with the Chief
 	for keepTrying {
 		// Only bother incrementing the counter if there is a defined limit
-		if ( retryCounter != 0 ){
+		if retryCounter != 0 {
 			log.Printf("Keep trying Dequeue!")
 		}
-		if ( maxRetries != 0 ){
+		if maxRetries != 0 {
 			retryCounter = retryCounter + 1
 			log.Printf("Max retries is %s and counter is at %s.", maxRetries, retryCounter)
 		}
@@ -179,7 +180,7 @@ func (c *Controller) removeFromQueue(id string) bool {
 		if err != nil {
 			log.Printf("Dequeue Client.Do(req) Error:")
 			log.Printf(err.Error())
-		}else{
+		} else {
 			defer resp.Body.Close()
 			body, readAllErr := ioutil.ReadAll(resp.Body)
 			if readAllErr != nil {
@@ -189,18 +190,18 @@ func (c *Controller) removeFromQueue(id string) bool {
 			log.Printf("Master Chief Dequeue Status: %s", resp.Status)
 			log.Printf("Master Chief Dequeue Body: %s", body)
 		}
-		
+
 		// 204 successful dequeue
-		if (err == nil) && (resp.StatusCode == 204){
-			log.Printf("Dequeue successful.")	
+		if (err == nil) && (resp.StatusCode == 204) {
+			log.Printf("Dequeue successful.")
 			dequeued = true
 			keepTrying = false
-		// 412 doesn't exist in queue, error
-		}else if (err == nil) && (resp.StatusCode == 412){
+			// 412 doesn't exist in queue, error
+		} else if (err == nil) && (resp.StatusCode == 412) {
 			log.Printf("Dequeue unsuccessful.")
 			keepTrying = false
-		// Otherwise wait, then retry
-		}else{
+			// Otherwise wait, then retry
+		} else {
 			log.Printf("Dequeue Request made. Waiting to begin next request.")
 			time.Sleep(retrySecondsDuration)
 		}
@@ -209,25 +210,25 @@ func (c *Controller) removeFromQueue(id string) bool {
 }
 
 func (c *Controller) imageExists(id string) bool {
-    endpoint := "unix:///var/run/docker.sock"
-    client, dockerErr := docker.NewVersionedClient(endpoint, "1.22")
-    if dockerErr != nil {
-        log.Printf("Error creating docker client: %s\n", dockerErr)
-        return false
-    }
+	endpoint := "unix:///var/run/docker.sock"
+	client, dockerErr := docker.NewVersionedClient(endpoint, "1.22")
+	if dockerErr != nil {
+		log.Printf("Error creating docker client: %s\n", dockerErr)
+		return false
+	}
 
-    _, inspectErr := client.InspectImage(id)
-    if inspectErr != nil {
-        log.Printf("Error testing if image %s exists: %s\n", id, inspectErr)
-        return false
-    }
-    return true
+	_, inspectErr := client.InspectImage(id)
+	if inspectErr != nil {
+		log.Printf("Error testing if image %s exists: %s\n", id, inspectErr)
+		return false
+	}
+	return true
 }
 
 func (c *Controller) canScan(id string) bool {
 	// Setup API Request
 	api := "http://" + os.Getenv("SCAN_API") + "/queue"
-	req, err := http.NewRequest("POST", api + "/" + id, bytes.NewBufferString("{}"))
+	req, err := http.NewRequest("POST", api+"/"+id, bytes.NewBufferString("{}"))
 	if err != nil {
 		log.Printf("Error setting up new request to Master Chief:")
 		log.Fatalf(err.Error())
@@ -243,9 +244,9 @@ func (c *Controller) canScan(id string) bool {
 	retryCounter := 0
 	var maxRetries int
 	var maxRetriesErr error
-	if len(os.Getenv("MAX_RETRIES")) == 0{
+	if len(os.Getenv("MAX_RETRIES")) == 0 {
 		maxRetries = 0
-	}else{
+	} else {
 		maxRetries, maxRetriesErr = strconv.Atoi(os.Getenv("MAX_RETRIES"))
 	}
 	if maxRetriesErr != nil {
@@ -257,19 +258,19 @@ func (c *Controller) canScan(id string) bool {
 	var retrySeconds int
 	var retrySecondsErr error
 	var retrySecondsDuration time.Duration
-	if len(os.Getenv("RETRY_SECONDS")) == 0{
+	if len(os.Getenv("RETRY_SECONDS")) == 0 {
 		retrySeconds = 60
-		retrySecondsDuration = time.Duration(retrySeconds)*time.Second
-	}else{
+		retrySecondsDuration = time.Duration(retrySeconds) * time.Second
+	} else {
 		retrySeconds, retrySecondsErr = strconv.Atoi(os.Getenv("RETRY_SECONDS"))
-		retrySecondsDuration = time.Duration(retrySeconds)*time.Second
+		retrySecondsDuration = time.Duration(retrySeconds) * time.Second
 	}
 	if retrySecondsErr != nil {
 		log.Printf("Error reading RETRY_SECONDS from environment configuration:")
 		log.Printf(retrySecondsErr.Error())
 		log.Printf("Defaulting RETRY_SECONDS to 60.")
 		retrySeconds = 60
-		retrySecondsDuration = time.Duration(retrySeconds)*time.Second
+		retrySecondsDuration = time.Duration(retrySeconds) * time.Second
 	}
 
 	// Check in with the Chief
@@ -277,24 +278,24 @@ func (c *Controller) canScan(id string) bool {
 	for keepTrying {
 		// Only bother incrementing the counter if there is a defined limit
 		// and we are not in a suspended state
-		if ( retryCounter != 0 ){
+		if retryCounter != 0 {
 			log.Printf("Keep trying Queue!")
 		}
-		if ( maxRetries != 0 ) && ( !isHalted ){
+		if (maxRetries != 0) && (!isHalted) {
 			retryCounter = retryCounter + 1
 			log.Printf("Max retries is %s and counter is at %s.", maxRetries, retryCounter)
 		}
 
 		// Reset isHalted
 		isHalted = false
-		
+
 		// Make request to Chief
 		client := &http.Client{Timeout: time.Second * 30}
 		resp, err := client.Do(req)
 		if err != nil {
 			log.Printf("Queue Client.Do(req) Error:")
 			log.Printf(err.Error())
-		}else{
+		} else {
 			defer resp.Body.Close()
 			body, readAllErr := ioutil.ReadAll(resp.Body)
 			if readAllErr != nil {
@@ -304,35 +305,35 @@ func (c *Controller) canScan(id string) bool {
 			log.Printf("Master Chief Queue Status: %s", resp.Status)
 			log.Printf("Master Chief Queue Body: %s", body)
 		}
-		
+
 		// If we get 201 then were good to go
-		if (err == nil) && (resp.StatusCode == 201){
+		if (err == nil) && (resp.StatusCode == 201) {
 			log.Printf("Master Chief says we can scan the image.")
 			canScan = true
 			keepTrying = false
-		// If we get 423 then it is being scanned elsewhere
-		}else if (err == nil) && (resp.StatusCode == 423){
+			// If we get 423 then it is being scanned elsewhere
+		} else if (err == nil) && (resp.StatusCode == 423) {
 			log.Printf("Master Chief says someone else is scanning this image. Aborting.")
 			keepTrying = false
-		// If we get 412 then its been scanned in the past 24 hours
-		}else if (err == nil) && (resp.StatusCode == 412){
+			// If we get 412 then its been scanned in the past 24 hours
+		} else if (err == nil) && (resp.StatusCode == 412) {
 			log.Printf("Master Chief says this was scanned within the past 24 hours. Aborting.")
 			keepTrying = false
-		// If we get a 403 then the server has too many scan jobs going, try again after timeout
-		} else if (err == nil) && (resp.StatusCode == 403){
+			// If we get a 403 then the server has too many scan jobs going, try again after timeout
+		} else if (err == nil) && (resp.StatusCode == 403) {
 			log.Printf("Master Chief says too many concurrent scan jobs. Wait.")
-		// If we get a 409 then HALT all scanning
-		} else if (err == nil) && (resp.StatusCode == 409){
+			// If we get a 409 then HALT all scanning
+		} else if (err == nil) && (resp.StatusCode == 409) {
 			log.Printf("Master Chief says HALT.")
 			log.Printf("Continue checking scan status with Chief for this image.")
 			isHalted = true
 			retryCounter = 0
-		// If we have exceeded the MAX_RETRIES limit then stop
-		}else if(retryCounter >= maxRetries) && (maxRetries != 0){
+			// If we have exceeded the MAX_RETRIES limit then stop
+		} else if (retryCounter >= maxRetries) && (maxRetries != 0) {
 			log.Printf("MAX_RETRIES exceeded. Stop.")
 			keepTrying = false
-		// Otherwise wait, then retry
-		}else{
+			// Otherwise wait, then retry
+		} else {
 			log.Printf("Queue Request made. Waiting to begin next request.")
 			time.Sleep(retrySecondsDuration)
 		}
@@ -340,7 +341,7 @@ func (c *Controller) canScan(id string) bool {
 	return canScan
 }
 
-func (c *Controller) scanImage(id string, args []string, imageRef string, imageSha string) error {
+func (c *Controller) scanImage(id string, args []string, imageRef string, imageSha string, openshiftSHA string) error {
 	endpoint := "unix:///var/run/docker.sock"
 	client, err := docker.NewVersionedClient(endpoint, "1.22")
 	binds := []string{}
@@ -355,10 +356,10 @@ func (c *Controller) scanImage(id string, args []string, imageRef string, imageS
 				Tty:          true,
 				Entrypoint:   args,
 				Env: []string{"SCAN_API=" + os.Getenv("INSIGHTS_OCP_API_SERVICE_HOST") + ":8080",
-							  "INSIGHTS_USERNAME=" + os.Getenv("INSIGHTS_USERNAME"),
-							  "INSIGHTS_PASSWORD=" + os.Getenv("INSIGHTS_PASSWORD"),
-							  "INSIGHTS_AUTHMETHOD=" + os.Getenv("INSIGHTS_AUTHMETHOD"),
-							  "INSIGHTS_PROXY=" + os.Getenv("INSIGHTS_PROXY")},
+					"INSIGHTS_USERNAME=" + os.Getenv("INSIGHTS_USERNAME"),
+					"INSIGHTS_PASSWORD=" + os.Getenv("INSIGHTS_PASSWORD"),
+					"INSIGHTS_AUTHMETHOD=" + os.Getenv("INSIGHTS_AUTHMETHOD"),
+					"INSIGHTS_PROXY=" + os.Getenv("INSIGHTS_PROXY")},
 			},
 			HostConfig: &docker.HostConfig{
 				Privileged: true,
@@ -376,20 +377,20 @@ func (c *Controller) scanImage(id string, args []string, imageRef string, imageS
 	abort := make(chan bool, 1)
 	r, w := io.Pipe()
 
-    monitorOptions := docker.AttachToContainerOptions{
-        Container:    container.ID,
-        OutputStream: w,
-        ErrorStream:  w,
-        Stream:       true,
-        Stdout:       true,
-        Stderr:       true,
-        Logs:         true,
-        RawTerminal:  true,
-    }
+	monitorOptions := docker.AttachToContainerOptions{
+		Container:    container.ID,
+		OutputStream: w,
+		ErrorStream:  w,
+		Stream:       true,
+		Stdout:       true,
+		Stderr:       true,
+		Logs:         true,
+		RawTerminal:  true,
+	}
 
-    go client.AttachToContainer(monitorOptions) // will block so isolate
+	go client.AttachToContainer(monitorOptions) // will block so isolate
 
-    go func(reader *io.PipeReader, a chan bool) {
+	go func(reader *io.PipeReader, a chan bool) {
 
 		for {
 			time.Sleep(time.Second)
@@ -452,9 +453,9 @@ func (c *Controller) scanImage(id string, args []string, imageRef string, imageS
 
 	log.Printf("Done waiting %d", status)
 
-	if (len(insightsReport) > 0 && !strings.HasPrefix(insightsReport, "ERROR:")) {
-		c.postResults(insightsReport, imageSha, imageRef)
-		c.annotateImage(imageRef, imageSha, insightsReport)
+	if len(insightsReport) > 0 && !strings.HasPrefix(insightsReport, "ERROR:") {
+		c.postResults(insightsReport, openshiftSHA, imageRef)
+		c.annotateImage(imageSha, openshiftSHA, imageRef, insightsReport)
 	}
 
 	options := docker.RemoveContainerOptions{
@@ -468,10 +469,10 @@ func (c *Controller) scanImage(id string, args []string, imageRef string, imageS
 	return err
 }
 
-func (c *Controller) postResults(results string, imageSha string, imageRef string) {
+func (c *Controller) postResults(results string, openshiftSHA string, imageRef string) {
 	api := "http://" + os.Getenv("SCAN_API") + "/reports"
 	req, err := http.NewRequest(
-		"POST", api + "/" + imageSha + "?name=" + imageRef,
+		"POST", api+"/"+openshiftSHA+"?name="+imageRef,
 		bytes.NewBufferString(results))
 	req.Header.Set("Content-Type", "application/json")
 
@@ -484,13 +485,13 @@ func (c *Controller) postResults(results string, imageSha string, imageRef strin
 	log.Printf("Status: %s", resp.Status)
 }
 
-func (c *Controller) annotateImage(imageRef string, imageSha string, annotation string){
-	log.Printf("Annotating %s", imageRef)
-	log.Printf("Annotating %s", imageSha)
-	c.UpdateImageAnnotationInfo(imageSha, annotation)
+func (c *Controller) annotateImage(imageSha string, openshiftSHA string, imageRef string, annotation string) {
+	log.Printf("Annotating local docker ID %s", imageSha)
+	log.Printf("Annotating Openshift ID %s", openshiftSHA)
+	c.updateImageAnnotationInfo(openshiftSHA, annotation)
 }
 
-func (c *Controller) UpdateImageAnnotationInfo(imageSha string, newInfo string) bool {
+func (c *Controller) updateImageAnnotationInfo(imageSha string, newInfo string) bool {
 
 	if c.openshiftClient == nil {
 		// if there's no OpenShift client, there can't be any image annotations
@@ -509,7 +510,7 @@ func (c *Controller) UpdateImageAnnotationInfo(imageSha string, newInfo string) 
 		oldAnnotations = make(map[string]string)
 	}
 
-	annotator := annotate.NewInsightsAnnotator("0.1", os.Getenv("SCAN_UI"))
+	annotator := annotate.NewInsightsAnnotator("0.1", c.getInsightsUILink())
 	var res common.ScanResponse
 	newInfoBytes := []byte(newInfo)
 	json.Unmarshal(newInfoBytes, &res)
@@ -521,7 +522,7 @@ func (c *Controller) UpdateImageAnnotationInfo(imageSha string, newInfo string) 
 	annotationValues["quality.images.openshift.io/operations.redhatinsights"] = opsAnnotations.ToJSON()
 	image.ObjectMeta.Annotations = annotationValues
 
-	log.Println("Annotate with information %s", annotationValues)
+	log.Printf("Annotate with information %s", annotationValues)
 
 	image, err = c.openshiftClient.Images().Update(image)
 	if err != nil {
@@ -532,4 +533,16 @@ func (c *Controller) UpdateImageAnnotationInfo(imageSha string, newInfo string) 
 	log.Println("Image annotated.")
 
 	return true
+}
+
+func (c *Controller) getInsightsUILink() string {
+	routeName := os.Getenv("SCAN_UI")
+	if len(routeName) == 0 {
+		routeName = "insights-ocp-ui"
+	}
+	routeAPI := c.openshiftClient.Routes("insights-scan") //TODO read this via downward api  metadata.namespace
+	route, _ := routeAPI.Get(routeName)
+	log.Printf("Route HOST is %s ", route.Spec.Host)
+	return "https://" + route.Spec.Host
+
 }
