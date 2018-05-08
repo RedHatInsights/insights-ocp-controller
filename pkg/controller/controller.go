@@ -8,7 +8,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"path"
 	"strconv"
 	"sync"
 	"time"
@@ -275,7 +274,7 @@ func (c *Controller) canScan(id string) bool {
 		}
 		if (maxRetries != 0) && (!isHalted) {
 			retryCounter = retryCounter + 1
-			log.Printf("Max retries is %s and counter is at %s.", maxRetries, retryCounter)
+			log.Printf("Max retries is %d and counter is at %d.", maxRetries, retryCounter)
 		}
 
 		// Reset isHalted
@@ -422,22 +421,16 @@ func (c *Controller) mountAndScan(id string, imageRef string, imageSha string) (
 	scanOptions.Image = imageSha
 	mounter := container.NewDefaultImageMounter(*scanOptions)
 	_, image, _ := mounter.Mount()
-	rhaiDir := path.Join(scanOptions.DstPath, "etc", "redhat-access-insights")
-	machineidPath := path.Join(rhaiDir, "machine-id")
-	os.MkdirAll(rhaiDir, os.ModePerm)
-	err = ioutil.WriteFile(machineidPath, []byte("deeznuts"), 0644)
-	if err != nil {
-		fmt.Printf("ERROR: Scan failed writing machine ID %s", err)
-		return "", err
-	}
 	scanner := iclient.NewDefaultScanner()
 	_, out, err := scanner.ScanImage(scanOptions.DstPath, image.ID)
 	if err != nil {
 		fmt.Printf("ERROR: Scan failed %s", err)
+		os.RemoveAll(scanDirectory)
 		return "", err
 	}
 	report = string(*out)
 	log.Printf("Scan results %s", report)
+	os.RemoveAll(scanDirectory)
 	return report, nil
 }
 
