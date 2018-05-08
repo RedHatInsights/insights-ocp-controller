@@ -1,16 +1,14 @@
 package controller
 
 import (
-	"bufio"
 	"bytes"
 	"encoding/json"
-	"io"
+	"fmt"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -24,7 +22,9 @@ import (
 	kclient "k8s.io/kubernetes/pkg/client/unversioned"
 	"k8s.io/kubernetes/pkg/runtime"
 
+	iclient "github.com/RedHatInsights/insights-goapi/client"
 	"github.com/RedHatInsights/insights-goapi/common"
+	"github.com/RedHatInsights/insights-goapi/container"
 	"github.com/RedHatInsights/insights-goapi/openshift"
 )
 
@@ -40,18 +40,6 @@ type Controller struct {
 type ScanResult struct {
 	completed bool
 	scanId    string
-}
-
-func getScanArgs(imageID string, mountPoint string) []string {
-
-	args := []string{}
-	args = append(args, "./insights-scanner")
-	args = append(args, "-image")
-	args = append(args, imageID)
-	args = append(args, "-mount_path")
-	args = append(args, mountPoint)
-
-	return args
 }
 
 func NewController(os *osclient.Client, kc *kclient.Client) *Controller {
@@ -95,13 +83,16 @@ func (c *Controller) ScanImages() {
 				log.Printf("Chief check-in successful.")
 				log.Printf("Beginning scan.")
 				// Scan the thing
-				c.scanImage(image.DockerImageMetadata.ID,
-					getScanArgs(string(image.DockerImageReference), "/tmp/image-content8"),
+				err := c.scanImage(image.DockerImageMetadata.ID,
 					string(image.DockerImageReference),
 					image.DockerImageMetadata.ID,
 					image.GetName())
 				// Check back in with the Chief (Dequeue)
-				log.Printf("Scan complete.")
+				if err == nil {
+					log.Printf("Scan completed successfully")
+				} else {
+					log.Printf("Scan completed with err %s ", err)
+				}
 				log.Printf("Removing from queue...")
 				c.removeFromQueue(image.DockerImageMetadata.ID)
 			}
@@ -171,7 +162,7 @@ func (c *Controller) removeFromQueue(id string) bool {
 		}
 		if maxRetries != 0 {
 			retryCounter = retryCounter + 1
-			log.Printf("Max retries is %s and counter is at %s.", maxRetries, retryCounter)
+			log.Printf("Max retries is %d and counter is at %d.", maxRetries, retryCounter)
 		}
 
 		// Make request to Chief
@@ -283,7 +274,7 @@ func (c *Controller) canScan(id string) bool {
 		}
 		if (maxRetries != 0) && (!isHalted) {
 			retryCounter = retryCounter + 1
-			log.Printf("Max retries is %s and counter is at %s.", maxRetries, retryCounter)
+			log.Printf("Max retries is %d and counter is at %d.", maxRetries, retryCounter)
 		}
 
 		// Reset isHalted
@@ -341,131 +332,14 @@ func (c *Controller) canScan(id string) bool {
 	return canScan
 }
 
-func (c *Controller) scanImage(id string, args []string, imageRef string, imageSha string, openshiftSHA string) error {
-	endpoint := "unix:///var/run/docker.sock"
-	client, err := docker.NewVersionedClient(endpoint, "1.22")
-	binds := []string{}
-	binds = append(binds, "/var/run/docker.sock:/var/run/docker.sock")
+func (c *Controller) scanImage(id string, imageRef string, imageSha string, openshiftSHA string) error {
 
-	container, err := client.CreateContainer(
-		docker.CreateContainerOptions{
-			Config: &docker.Config{
-				Image:        os.Getenv("SCANNER_IMAGE"),
-				AttachStdout: true,
-				AttachStderr: true,
-				Tty:          true,
-				Entrypoint:   args,
-				Env: []string{"SCAN_API=" + os.Getenv("INSIGHTS_OCP_API_SERVICE_HOST") + ":8080",
-					"INSIGHTS_USERNAME=" + os.Getenv("INSIGHTS_USERNAME"),
-					"INSIGHTS_PASSWORD=" + os.Getenv("INSIGHTS_PASSWORD"),
-					"INSIGHTS_AUTHMETHOD=" + os.Getenv("INSIGHTS_AUTHMETHOD"),
-					"INSIGHTS_PROXY=" + os.Getenv("INSIGHTS_PROXY")},
-			},
-			HostConfig: &docker.HostConfig{
-				Privileged: true,
-				Binds:      binds,
-			},
-		})
-	if err != nil {
-		log.Println("FAIL")
-		log.Println(err.Error())
-		return err
+	insightsReport, err := c.mountAndScan(id, imageRef, imageSha)
+	if err == nil {
+		log.Printf("Scan successful")
+		c.postResults(insightsReport, openshiftSHA, imageRef)             //TODO handle error
+		c.annotateImage(imageSha, openshiftSHA, imageRef, insightsReport) //TODO handle error
 	}
-	log.Println(container.ID)
-
-	done := make(chan ScanResult)
-	abort := make(chan bool, 1)
-	r, w := io.Pipe()
-
-	monitorOptions := docker.AttachToContainerOptions{
-		Container:    container.ID,
-		OutputStream: w,
-		ErrorStream:  w,
-		Stream:       true,
-		Stdout:       true,
-		Stderr:       true,
-		Logs:         true,
-		RawTerminal:  true,
-	}
-
-	go client.AttachToContainer(monitorOptions) // will block so isolate
-
-	go func(reader *io.PipeReader, a chan bool) {
-
-		for {
-			time.Sleep(time.Second)
-			select {
-			case _ = <-a:
-				log.Printf("Received IO shutdown for scanner.\n")
-				reader.Close()
-				return
-
-			default:
-			}
-
-		}
-
-	}(r, abort)
-
-	var insightsReport string
-	go func(reader io.Reader, sr chan ScanResult) {
-		scanner := bufio.NewScanner(reader)
-		scan := ScanResult{completed: false, scanId: ""}
-
-		for scanner.Scan() {
-			out := scanner.Text()
-			if strings.Contains(out, "Post Scan...") {
-				log.Printf("Found completed scan with result.\n")
-				scan.completed = true
-			}
-			log.Printf("%s\n", out)
-			insightsReport = out
-
-			if strings.Contains(out, "ScanContainerView{scanId=") {
-				cmd := strings.Split(out, "ScanContainerView{scanId=")
-				eos := strings.Index(cmd[1], ",")
-				scan.scanId = cmd[1][:eos]
-				log.Printf("Found scan ID %s with result.\n", scan.scanId)
-			}
-		}
-
-		log.Printf("Placing scan result %t from scanId %s into channel.\n", scan.completed, scan.scanId)
-		sr <- scan
-
-	}(r, done)
-
-	err = client.StartContainer(container.ID, &docker.HostConfig{Privileged: true})
-
-	if err != nil {
-		log.Println("FAIL to start")
-		log.Println(err.Error())
-		return err
-	}
-
-	log.Println("Waiting")
-	status, err := client.WaitContainer(container.ID)
-
-	if err != nil {
-		log.Println("FAIL to wait")
-		log.Println(err.Error())
-		return err
-	}
-
-	log.Printf("Done waiting %d", status)
-
-	if len(insightsReport) > 0 && !strings.HasPrefix(insightsReport, "ERROR:") {
-		c.postResults(insightsReport, openshiftSHA, imageRef)
-		c.annotateImage(imageSha, openshiftSHA, imageRef, insightsReport)
-	}
-
-	options := docker.RemoveContainerOptions{
-		ID:            container.ID,
-		RemoveVolumes: true,
-	}
-
-	err = client.RemoveContainer(options)
-
-	abort <- true
 	return err
 }
 
@@ -491,22 +365,22 @@ func (c *Controller) annotateImage(imageSha string, openshiftSHA string, imageRe
 	c.updateImageAnnotationInfo(openshiftSHA, annotation)
 }
 
-func (c *Controller) updateImageAnnotationInfo(imageSha string, newInfo string) bool {
+func (c *Controller) updateImageAnnotationInfo(openshiftSha string, newInfo string) bool {
 
 	if c.openshiftClient == nil {
 		// if there's no OpenShift client, there can't be any image annotations
 		return false
 	}
 
-	image, err := c.openshiftClient.Images().Get(imageSha)
+	image, err := c.openshiftClient.Images().Get(openshiftSha)
 	if err != nil {
-		log.Printf("Job: Error getting image %s: %s\n", imageSha, err)
+		log.Printf("Job: Error getting image %s: %s\n", openshiftSha, err)
 		return false
 	}
 
 	oldAnnotations := image.ObjectMeta.Annotations
 	if oldAnnotations == nil {
-		log.Printf("Image %s has no annotations - creating object.\n", imageSha)
+		log.Printf("Image %s has no annotations - creating object.\n", openshiftSha)
 		oldAnnotations = make(map[string]string)
 	}
 
@@ -514,8 +388,8 @@ func (c *Controller) updateImageAnnotationInfo(imageSha string, newInfo string) 
 	var res common.ScanResponse
 	newInfoBytes := []byte(newInfo)
 	json.Unmarshal(newInfoBytes, &res)
-	secAnnotations := annotator.CreateSecurityAnnotation(&res, imageSha)
-	opsAnnotations := annotator.CreateOperationsAnnotation(&res, imageSha)
+	secAnnotations := annotator.CreateSecurityAnnotation(&res, openshiftSha)
+	opsAnnotations := annotator.CreateOperationsAnnotation(&res, openshiftSha)
 
 	annotationValues := make(map[string]string)
 	annotationValues["quality.images.openshift.io/vulnerability.redhatinsights"] = secAnnotations.ToJSON()
@@ -526,13 +400,38 @@ func (c *Controller) updateImageAnnotationInfo(imageSha string, newInfo string) 
 
 	image, err = c.openshiftClient.Images().Update(image)
 	if err != nil {
-		log.Printf("Error updating annotations for image: %s. %s\n", imageSha, err)
+		log.Printf("Error updating annotations for image: %s. %s\n", openshiftSha, err)
 		return false
 	}
 
 	log.Println("Image annotated.")
 
 	return true
+}
+
+func (c *Controller) mountAndScan(id string, imageRef string, imageSha string) (report string, err error) {
+
+	scanDirectory := "/data/scanDir/scratch"
+	//cleanup first
+	os.RemoveAll(scanDirectory)
+	os.MkdirAll(scanDirectory, os.ModePerm)
+
+	scanOptions := container.NewDefaultImageMounterOptions()
+	scanOptions.DstPath = scanDirectory
+	scanOptions.Image = imageSha
+	mounter := container.NewDefaultImageMounter(*scanOptions)
+	_, image, _ := mounter.Mount()
+	scanner := iclient.NewDefaultScanner()
+	_, out, err := scanner.ScanImage(scanOptions.DstPath, image.ID)
+	if err != nil {
+		fmt.Printf("ERROR: Scan failed %s", err)
+		os.RemoveAll(scanDirectory)
+		return "", err
+	}
+	report = string(*out)
+	log.Printf("Scan results %s", report)
+	os.RemoveAll(scanDirectory)
+	return report, nil
 }
 
 func (c *Controller) getInsightsUILink() string {
