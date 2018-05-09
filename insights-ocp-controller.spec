@@ -5,12 +5,13 @@
 
 Name:           insights-ocp-controller
 Version:        0.0.1
-Release:        1%{?dist}
+Release:        2%{?dist}
 Summary:        Tool for extracting and serving content of container images
 License:        ASL 2.0
 URL:            https://github.com/redhatinsights/insights-ocp-controller
 Source0:        https://github.com/%{project}/%{repo}/archive/%{commit}/%{repo}-%{version}.tar.gz
 BuildRequires:  golang >= 1.7
+Requires:       insights-client >= 3.0.3
 
 %description
 Insights scan controller for Openshift Container Platform.
@@ -33,6 +34,10 @@ install -p -m 0755 ./insights-ocp-controller %{buildroot}%{_bindir}/insights-ocp
 %{_bindir}/insights-ocp-controller
 
 %changelog
+* Tue May 08 2018 Lindani Phiri <lphiri@redhat.com> - 0.0.1-2
+- Address RPM diff issues 
+- Scan in controller
+
 * Wed May 02 2018 Lindani Phiri <lphiri@redhat.com> - 0.0.1-1
 - Initial Release
 
