@@ -79,7 +79,7 @@ func (c *Controller) ScanImages() {
 		if c.imageExists(image.DockerImageMetadata.ID) {
 			log.Printf("Image exists.")
 			log.Printf("Check in with Master Chief...")
-			if c.canScan(image.DockerImageMetadata.ID) {
+			if c.canScan(image.GetName()) {
 				log.Printf("Chief check-in successful.")
 				log.Printf("Beginning scan.")
 				// Scan the thing
@@ -94,7 +94,7 @@ func (c *Controller) ScanImages() {
 					log.Printf("Scan completed with err %s ", err)
 				}
 				log.Printf("Removing from queue...")
-				c.removeFromQueue(image.DockerImageMetadata.ID)
+				c.removeFromQueue(image.GetName())
 			}
 		} else {
 			log.Printf("Image does not exist.")
