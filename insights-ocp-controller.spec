@@ -29,6 +29,7 @@ go build -o insights-ocp-controller $(pwd)/_build/src/github.com/RedHatInsights/
 
 %install
 install -d %{buildroot}%{_bindir}
+mkdir -p %{buildroot}/etc/insights-ocp-controller
 install -p -m 0755 ./insights-ocp-controller %{buildroot}%{_bindir}/insights-ocp-controller
 install -m644 ./client-egg/rpm.egg  %{buildroot}/etc/insights-ocp-controller
 install -m644 ./client-egg/rpm.egg.asc  %{buildroot}/etc/insights-ocp-controller
