@@ -11,8 +11,8 @@ RUN yum -y update-minimal --security --sec-severity=Important --sec-severity=Cri
     yum clean all && \
     rm  /etc/insights-client/rpm.egg && \
     rm  /etc/insights-client/rpm.egg.asc && \ 
-    mv /etc/insights-ocp-scanner/rpm.egg /etc/insights-client/ && \
-    mv /etc/insights-ocp-scanner/rpm.egg.asc /etc/insights-client/
+    mv /etc/insights-ocp-controller/rpm.egg /etc/insights-client/ && \
+    mv /etc/insights-ocp-controller/rpm.egg.asc /etc/insights-client/
 
 ENV EGG=/etc/insights-client/rpm.egg
 
