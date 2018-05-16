@@ -1,12 +1,7 @@
 FROM rhel7:7.5
 
-LABEL \
-      com.redhat.component="insights-ocp-controller-container" \
-      name="containers/insights-ocp-controller" \
-      version="0.0.1"
 
 RUN yum -y update-minimal --security --sec-severity=Important --sec-severity=Critical --setopt=tsflags=nodocs && \
-    yum install -y golang && \
     yum install -y insights-client insights-ocp-controller && \
     yum clean all && \
     rm  /etc/insights-client/rpm.egg && \
@@ -17,3 +12,16 @@ RUN yum -y update-minimal --security --sec-severity=Important --sec-severity=Cri
 ENV EGG=/etc/insights-client/rpm.egg
 
 ENTRYPOINT ["/usr/bin/insights-ocp-controller"]
+
+
+LABEL \
+     com.redhat.component="insights-ocp-controller-container" \
+     version="0.0.1" \
+     summary="Daemon container for Red Hat Image Insights on Openshift" \
+     io.k8s.description="The daemon scans images running on an Openshift node." \
+     description="The daemon scans images running on an Openshift node." \
+     vendor="Red Hat" \
+     name="insights-tech-preview/insights-ocp-controller" \
+     io.k8s.display-name="Red Hat Insights Openshift Scanning Controller" \
+     io.openshift.tags="openshift,redhatinsights" \
+     usage="This image is intended for use as part of the Insights Application in Openshift"
