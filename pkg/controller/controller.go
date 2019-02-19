@@ -21,6 +21,7 @@ import (
 	"k8s.io/kubernetes/pkg/api/meta"
 	kclient "k8s.io/kubernetes/pkg/client/unversioned"
 	"k8s.io/kubernetes/pkg/runtime"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	iclient "github.com/RedHatInsights/insights-goapi/client"
 	"github.com/RedHatInsights/insights-goapi/common"
@@ -29,7 +30,7 @@ import (
 )
 
 type Controller struct {
-	openshiftClient *osclient.Client
+	// openshiftClient *osclient.Client
 	kubeClient      *kclient.Client
 	mapper          meta.RESTMapper
 	typer           runtime.ObjectTyper
@@ -42,23 +43,23 @@ type ScanResult struct {
 	scanId    string
 }
 
-func NewController(os *osclient.Client, kc *kclient.Client) *Controller {
+func NewController(kc *kclient.Client) *Controller {
 
-	f := clientcmd.New(pflag.NewFlagSet("empty", pflag.ContinueOnError))
-	mapper, typer := f.Object(false)
+	// f := clientcmd.New(pflag.NewFlagSet("empty", pflag.ContinueOnError))
+	// mapper, typer := f.Object(false)
 
 	return &Controller{
-		openshiftClient: os,
+		// openshiftClient: os,
 		kubeClient:      kc,
-		mapper:          mapper,
-		typer:           typer,
-		f:               f,
+		// mapper:          mapper,
+		// typer:           typer,
+		// f:               f,
 	}
 }
 
 func (c *Controller) ScanImages() {
 
-	imageList, err := c.openshiftClient.Images().List(kapi.ListOptions{})
+	imageList, err := c.kubeClient.CoreV1()Images("").List(metav1.ListOptions{})
 
 	if err != nil {
 		log.Println(err)
@@ -70,37 +71,39 @@ func (c *Controller) ScanImages() {
 		return
 	}
 
-	// Get the list of images to scan
-	for _, image := range imageList.Items {
-		log.Printf("Scanning image %s %s", image.DockerImageMetadata.ID, image.DockerImageReference)
+	log.Println(imageList.Items)
 
-		// Check in to schedule the scan
-		log.Printf("Checking that image exists locally first...")
-		if c.imageExists(image.DockerImageMetadata.ID) {
-			log.Printf("Image exists.")
-			log.Printf("Check in with Master Chief...")
-			if c.canScan(image.GetName()) {
-				log.Printf("Chief check-in successful.")
-				log.Printf("Beginning scan.")
-				// Scan the thing
-				err := c.scanImage(image.DockerImageMetadata.ID,
-					string(image.DockerImageReference),
-					image.DockerImageMetadata.ID,
-					image.GetName())
-				// Check back in with the Chief (Dequeue)
-				if err == nil {
-					log.Printf("Scan completed successfully")
-				} else {
-					log.Printf("Scan completed with err %s ", err)
-				}
-				log.Printf("Removing from queue...")
-				c.removeFromQueue(image.GetName())
-			}
-		} else {
-			log.Printf("Image does not exist.")
-			log.Printf("Aborting scan.")
-		}
-	}
+	// Get the list of images to scan
+	// for _, image := range imageList.Items {
+	// 	log.Printf("Scanning image %s %s", image.DockerImageMetadata.ID, image.DockerImageReference)
+
+	// 	// Check in to schedule the scan
+	// 	log.Printf("Checking that image exists locally first...")
+	// 	if c.imageExists(image.DockerImageMetadata.ID) {
+	// 		log.Printf("Image exists.")
+	// 		log.Printf("Check in with Master Chief...")
+	// 		if c.canScan(image.GetName()) {
+	// 			log.Printf("Chief check-in successful.")
+	// 			log.Printf("Beginning scan.")
+	// 			// Scan the thing
+	// 			err := c.scanImage(image.DockerImageMetadata.ID,
+	// 				string(image.DockerImageReference),
+	// 				image.DockerImageMetadata.ID,
+	// 				image.GetName())
+	// 			// Check back in with the Chief (Dequeue)
+	// 			if err == nil {
+	// 				log.Printf("Scan completed successfully")
+	// 			} else {
+	// 				log.Printf("Scan completed with err %s ", err)
+	// 			}
+	// 			log.Printf("Removing from queue...")
+	// 			c.removeFromQueue(image.GetName())
+	// 		}
+	// 	} else {
+	// 		log.Printf("Image does not exist.")
+	// 		log.Printf("Aborting scan.")
+	// 	}
+	// }
 
 	return
 
