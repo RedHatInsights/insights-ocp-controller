@@ -3,16 +3,17 @@ package main
 import (
 	"log"
 	"os"
-	"time"
+	// "time"
 
-	"github.com/RedHatInsights/insights-ocp-controller/pkg/controller"
+	// "github.com/RedHatInsights/insights-ocp-controller/pkg/controller"
 	// _ "github.com/openshift/origin/pkg/api/install"
 	// osclient "github.com/openshift/origin/pkg/client"
 	// "github.com/openshift/origin/pkg/cmd/util/clientcmd"
 
 	// "github.com/spf13/pflag"
 	restclient "k8s.io/client-go/rest"
-	kclient "k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/kubernetes"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func main() {
@@ -28,7 +29,7 @@ func main() {
 		// }
 	}
 
-	kubeClient, err := kclient.NewForConfig(config)
+	kubeClient, err := kubernetes.NewForConfig(config)
 	if err != nil {
 		log.Printf("Error creating cluster config: %s", err)
 		os.Exit(1)
@@ -38,11 +39,24 @@ func main() {
 	// 	log.Printf("Error creating OpenShift client: %s", err)
 	// 	os.Exit(2)
 	// }
+	imageList, err := kubeClient.CoreV1().Pods("").List(metav1.ListOptions{})
 
-	c := controller.NewController(kubeClient)
-	for true {
-		c.ScanImages()
-		time.Sleep(time.Hour)
+	if err != nil {
+		log.Println(err)
+		return
 	}
+
+	if imageList == nil {
+		log.Println("No images")
+		return
+	}
+
+	log.Println(imageList.Items)
+
+	// c := controller.NewController(kubeClient)
+	// for true {
+	// 	c.ScanImages()
+	// 	time.Sleep(time.Hour)
+	// }
 
 }
